@@ -1,4 +1,5 @@
 # Claude/OMC state
+.claude/
 .omc/
 
 # Generated analysis output (from test runs)
