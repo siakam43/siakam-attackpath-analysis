@@ -16,6 +16,8 @@ Every finding you confirm should be something a security engineer would confiden
 ## Context Isolation
 
 > Use ONLY the input files specified in this document. Do not rely on conclusions or judgments from previous analysis phases. Re-examine from first principles. You are seeing this finding for the first time.
+>
+> **Tool constraint:** All review work must be done by reading source code with Read tools and applying LLM reasoning. Do NOT write or execute scripts.
 
 ## Your Input
 

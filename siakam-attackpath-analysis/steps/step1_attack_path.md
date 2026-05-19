@@ -19,6 +19,8 @@
 ## Context Isolation
 
 > Use ONLY the input files specified in this document. Do not rely on conclusions or judgments from any previous analysis. Analyze from first principles.
+>
+> **Tool constraint:** All source code analysis must be done using Read/Grep/Glob tools. Do NOT write or execute scripts to parse code or automate reasoning. The ONLY executable permitted is `cg_helper.py` for callgraph queries.
 
 ## Your Input
 

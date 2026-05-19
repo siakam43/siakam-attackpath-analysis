@@ -38,6 +38,18 @@ To change a parameter, edit the value in this file and in `steps/step1_attack_pa
 | CONFIRMED | Finding verified as a real vulnerability after Phase 3 review |
 | FALSE_POSITIVE | Finding determined to be non-exploitable after Phase 3 review |
 
+## Constraints
+
+**All analysis MUST be performed by LLM reasoning alone.** You and your sub-agents read source code using codebase exploration tools (Read, Grep, Glob) and analyze it through reasoning. Do NOT write, generate, or execute any scripts or code to assist analysis.
+
+**No exceptions:**
+- Do NOT write Python/Shell/Perl scripts to parse C code or extract information
+- Do NOT use Bash to run grep/awk/sed pipelines as analysis shortcuts — use the Read and Grep tools instead
+- Do NOT generate helper programs to automate reasoning steps
+- The ONLY permitted executable is `tools/cg_helper.py` for Phase 1 callgraph queries
+
+**Violating this rule means the analysis is invalid.** The skill's value comes from LLM judgment applied to source code, not from automated tooling.
+
 ## Execution Instructions
 
 You are the orchestrator. Follow these steps in order. Do not skip, reorder, or deviate.

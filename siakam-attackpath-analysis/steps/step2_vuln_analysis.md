@@ -12,6 +12,8 @@
 ## Context Isolation
 
 > Use ONLY the input files specified in this document. Do not rely on conclusions or judgments from any previous analysis. Analyze each function from its source code.
+>
+> **Tool constraint:** All vulnerability analysis must be done by reading source code with Read/Grep/Glob tools and applying LLM reasoning. Do NOT write or execute scripts to parse code, match patterns, or automate analysis. All 8 review methods must be performed manually by reasoning over the source code.
 
 ## Your Input
 
