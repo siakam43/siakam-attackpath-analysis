@@ -210,7 +210,7 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
    - For each finding, dispatch a reviewer sub-agent with the prompt from `step3_false_positive.md`. Set its timeout to `PHASE3_TIMEOUT_MS` ms.
    - The reviewer receives:
      - The individual finding context (the `<!-- SECTION: finding -->` block from the vuln report).
-     - The attack path chain: the sequence of functions from entry to vulnerability function, with file:line (e.g., `entry @ src/a.c:10 → mid @ src/b.c:20 → vuln @ src/c.c:30`). No Step 1/2 analysis — bare chain only.
+     - The attack path chain with edge annotations: the sequence of functions from entry to vulnerability function, with file:line and edge type/confidence between hops (e.g., `entry @ src/a.c:10 → [direct] mid @ src/b.c:20 → [indirect, confidence: high] vuln @ src/c.c:30`). No Step 1/2 analysis — bare chain + edge metadata only.
      - `PROJECT_DIR` and `EXCLUSIONS` for locating source files.
    - The reviewer reads source code themselves using Read tools, starting with the vulnerability function and immediate caller. They may read any function in the attack path chain for context (up to the entry). Do NOT send pre-read source code — let the reviewer read fresh.
    - The reviewer returns: CONFIRMED / FALSE_POSITIVE (with reason) / DISPUTED (with reason).
@@ -221,7 +221,7 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
      1. **Re-read** the current `<uid>_vuls.md` file to get its exact state including any prior review updates already applied.
      2. Locate the matching `<!-- SECTION: finding -->` block by finding number (`Finding-XXX`).
      3. Verify the finding block has `Reviewed` → `no` (not yet reviewed). If already reviewed, skip — this is a duplicate verdict.
-     4. Update the `### Review (Step 3)` block:
+     4. Update the `### Review (Step 3)` block. **Critical: when using the Edit tool, the old_string MUST include the finding's header line** (e.g., `## Finding-001: Buffer Overflow in WRITE ioctl...`) to guarantee the match is unique. Never use a generic string like `Reviewed | *to be filled in Step 3*` alone — it matches all unreviewed findings and will create duplicates.
         - `Reviewed` → yes
         - `Result` → CONFIRMED / FALSE_POSITIVE
         - `Reviewer` → sub-agent identifier
@@ -245,6 +245,13 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 ### Phase 4: Consolidation
 
 1. **Scan all `<uid>_vuls.md` files.**
+   - **Deduplication check**: Scan for duplicate finding numbers within each `_vuls.md` file and across files. If `Finding-XXX` appears more than once in the same file, keep only the first occurrence (the one closest to the file top) and discard later duplicates. If duplicates differ in their Review verdict, use the first occurrence's verdict. Count discarded duplicates separately — report them in a `## Data Integrity Notes` section of Vul_report.md:
+     ```markdown
+     ## Data Integrity Notes
+     | File | Finding | Issue | Resolution |
+     |------|---------|-------|------------|
+     | driver_ioctl_vuls.md | Finding-005 | Duplicate finding (2 occurrences) | Kept first occurrence (FALSE_POSITIVE); discarded duplicate (CONFIRMED) |
+     ```
    - Extract every finding with `Result: CONFIRMED`.
    - Also identify findings where `Reviewed` is still `no` (reviewer failed, verdict never applied). Flag these as **unreviewed** — do NOT include them in confirmed vulnerabilities. List them in the `## Unreviewed Findings` section of Vul_report.md.
    - Count total unreviewed findings and report them in the Summary table.
@@ -296,6 +303,14 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 |---------|-------|----------|-------------------|
 | Finding-XXX: <title> | <entry> @ <file>:<line> | HIGH / MEDIUM / LOW | Reviewer sub-agent failed; verdict not applied |
 <!-- /SECTION: unreviewed -->
+
+<!-- SECTION: integrity -->
+## Data Integrity Notes
+(Only include if duplicates or other data issues were found and resolved)
+| File | Finding | Issue | Resolution |
+|------|---------|-------|------------|
+| <file> | <finding> | <issue description> | <resolution> |
+<!-- /SECTION: integrity -->
 
 <!-- SECTION: vulns -->
 ## Confirmed Vulnerabilities

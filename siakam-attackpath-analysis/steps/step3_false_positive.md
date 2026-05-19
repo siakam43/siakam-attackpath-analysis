@@ -23,7 +23,7 @@ Every finding you confirm should be something a security engineer would confiden
 
 You receive exactly ONE finding to review:
 - The finding's `<!-- SECTION: finding -->` block from `<uid>_vuls.md` (containing the Step 2 identification, severity, confidence, description, code snippet)
-- The complete **attack path chain** for this finding: the sequence of function names with file:line from entry to the vulnerability function (e.g., `driver_ioctl @ src/driver.c:19 → parse_cmd @ src/parser.c:42 → apply_config @ src/config.c:88`). This is provided as metadata only — no Step 1/2 analysis or conclusions are included.
+- The complete **attack path chain** for this finding: the sequence of function names with file:line and the edge type between each hop (e.g., `driver_ioctl @ src/driver.c:19 → [direct] parse_cmd @ src/parser.c:42 → [indirect, confidence: high] apply_config @ src/config.c:88`). The edge annotations tell you whether each call is direct or indirect (function pointer) and the confidence level. This is provided as metadata only — no Step 1/2 analysis or conclusions are included.
 - `PROJECT_DIR`: Absolute path to the project root, for locating source files.
 - `EXCLUSIONS`: List of excluded files/directories.
 
@@ -41,7 +41,9 @@ Check the finding against this list. If it matches ANY rule, return FALSE_POSITI
 
 **HARD EXCLUSIONS — Findings matching these are automatically false positives:**
 
-1. **Denial of Service (DOS) or resource exhaustion.** An attacker causing the system to hang, loop, or consume resources without gaining control or escalating privilege is NOT a vulnerability in this analysis.
+1. **Denial of Service (DOS) or resource exhaustion WITHOUT memory corruption.** An attacker causing the system to hang, loop, or consume resources without corrupting memory, gaining control, or escalating privilege is NOT a vulnerability in this analysis.
+   - **Explicitly NOT excluded**: NULL pointer dereferences, double-frees, or kernel panics that result from use-after-free, heap overflow, or other memory corruption are NOT "just DoS" — the memory corruption is the vulnerability, regardless of whether the observable outcome is a crash. If the finding's causal chain includes a UAF write, double-free, buffer overflow, or any write to freed/corrupted memory, do NOT apply this rule.
+   - **Explicitly NOT excluded**: Race conditions or TOCTOU that lead to memory corruption or privilege escalation — even if the most likely outcome is a crash, the memory corruption path is the vulnerability.
 2. **Secrets/credentials stored on disk**, if the disk/filesystem is otherwise secured by OS permissions or disk encryption.
 3. **Rate limiting concerns or service overload scenarios.**
 4. **Memory consumption or CPU exhaustion** without a concrete path to code execution or privilege escalation.
@@ -62,7 +64,7 @@ For each check below, read the source code with fresh eyes. Do NOT rely on the S
 
 | Check | How to Verify | Result |
 |-------|--------------|--------|
-| **Reachability** | Is the call path from entry to this function real? Read each function in the attack path chain (starting from the vulnerability function, moving up). Can you trace the exact sequence of calls? If any step uses an indirect call (function pointer), has the pointer assignment been confirmed in the source? | PASS / FAIL / UNCERTAIN |
+| **Reachability** | Is the call path from entry to this function real? The attack path chain includes edge type annotations (`[direct]` / `[indirect, confidence: ...]`) — use these as your starting evidence. Read each function in the chain (starting from the vulnerability function, moving up) and verify the call exists in the source. For `[direct]` edges: confirm the callee name appears in the caller's source. For `[indirect, confidence: ...]` edges: find the function pointer assignment and confirm it resolves to the callee. If you cannot find ANY direct call from the caller to the callee in the source, that is a FAIL. | PASS / FAIL / UNCERTAIN |
 | **Data-flow validity** | Does entry data really reach the vulnerable parameter or state? Read the source of functions in the attack path chain, tracing the data from entry parameters through assignments, struct fields, and function arguments. Do not assume Step 2 was correct. If the chain is deeper than 3 levels, trace at least 3 levels up from the vulnerability function. | PASS / FAIL / UNCERTAIN |
 | **Protective mechanisms** | Are there bounds checks, lock acquisitions, permission checks, or NULL checks that protect the vulnerable operation? Check the vulnerability function AND its callers up the chain. A bounds check in any caller that sanitizes data before the call is valid protection — you must read far enough up the chain to confirm. | PASS / FAIL / UNCERTAIN |
 | **Exploit condition realism** | Are the exploit preconditions actually satisfiable in the target's runtime environment? For example: can the attacker control the physical memory layout? Does the DMA buffer actually come from an external source? Is the race window genuinely exploitable (nanoseconds in kernel context vs. user-triggerable)? | PASS / FAIL / UNCERTAIN |

@@ -42,7 +42,9 @@ For each function in your sorted, deduplicated list:
 
 1. Locate the function definition in `<PROJECT_DIR>/<file>` at the given line.
 2. Read the complete function body (from opening `{` to closing `}`).
-3. Also read any called functions that are within the same file and relevant to understanding the logic (use your judgment — do not expand beyond 3 levels of local helper calls).
+3. **For entry functions with dispatch logic** (large `switch` statements, `if-else` chains on `cmd`/`type`/`op` parameters): each branch is an independent attack surface. Read through ALL branches and identify every terminal-function call within each branch (`kmalloc`, `memcpy`, `kfree`, `ioremap`, `copy_from_user`, etc.). Branches that call different terminal functions with different tainted arguments must be analyzed separately in Step 2.2c.
+4. Also read any called functions that are within the same file and relevant to understanding the logic (use your judgment — do not expand beyond 3 levels of local helper calls).
+5. **For infected functions with trivial bodies** (e.g., `return 0` after receiving tainted data): they are NOT automatically clean. A function that receives attacker data and returns success without any validation is a Category A (Input Validation) finding. Do not skip trivial functions.
 
 ### Step 2.2b: Determine Applicability
 
@@ -50,7 +52,7 @@ Scan the function body. For each of the 9 methods below, determine if the method
 
 | Method | Applicability Check |
 |--------|---------------------|
-| Source-to-sink tracking | Applicable if the function calls any memory operation (memcpy, strcpy, sprintf, copy_to_user, mmio_write, etc.) or passes data to such a function |
+| Source-to-sink tracking | Applicable if the function (a) calls any terminal function with a tainted argument — including memory ops (`memcpy`, `strcpy`, `sprintf`, `copy_to_user`), allocators (`kmalloc`, `kzalloc`, `vmalloc`), mappers (`ioremap`), deallocators (`kfree`), or I/O (`writel`, `mmio_write`); (b) passes tainted data as an argument to any callee; or (c) is marked `active` or `pass-through` in the Function Index and receives tainted data regardless of what it does with it |
 | Bounds-check completeness | Applicable if the function uses array indexing, pointer arithmetic, or calls memcpy/strcpy with a variable length argument |
 | Integer safety | Applicable if the function performs arithmetic on variables that could be tainted, especially before memory operations or size calculations |
 | Lifetime analysis | Applicable if the function calls malloc/free/kmalloc/kfree or uses dynamically allocated memory |
@@ -65,8 +67,13 @@ Scan the function body. For each of the 9 methods below, determine if the method
 For each method marked APPLICABLE, perform the analysis:
 
 **1. Source-to-Sink Tracking**
+- This method is applicability-check (c): if the function is `active` or `pass-through` and receives tainted data, but does not call any terminal function or pass tainted data to a callee, it is a Category A (Input Validation) finding — the function accepted attacker data and did nothing to validate it.
 - Identify taint sources: entry parameters that reach this function.
-- Identify dangerous sinks: memcpy, strcpy, sprintf, sscanf, copy_to_user, copy_from_user, mmio_write, iowrite*, writel, outb, etc.
+- Identify dangerous sinks — these are broken into four tiers:
+  - **Memory ops**: `memcpy`, `memmove`, `memset`, `strcpy`, `strncpy`, `strcat`, `strncat`, `sprintf`, `snprintf`, `sscanf`, `copy_from_user`, `copy_to_user`, `__copy_from_user`, `__copy_to_user`
+  - **Allocators / deallocators**: `kmalloc`, `kzalloc`, `kcalloc`, `vmalloc`, `vfree`, `kfree`, `devm_kzalloc`, `devm_kmalloc`
+  - **Privilege mappers**: `ioremap`, `ioremap_nocache`, `ioremap_wc`, `devm_ioremap`, `devm_ioremap_resource`
+  - **Hardware I/O**: `writel`, `writew`, `writeb`, `writeq`, `__raw_writel`, `iowrite8`, `iowrite16`, `iowrite32`, `mmio_write`, `outb`, `outw`, `outl`
 - For each source-sink pair, trace whether the tainted value can reach the sink without sanitization.
 - Record as PASS (no issue), FAIL (vulnerability found), or N/A.
 
