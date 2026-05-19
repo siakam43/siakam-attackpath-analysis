@@ -22,6 +22,9 @@ Analyze C codebases for attack paths and security vulnerabilities.
 |-----------|---------|-------------|
 | `MAX_CALL_DEPTH` | 10 | Maximum nodes in an attack path (entry to leaf) |
 | `MAX_INFECTED_FUNCTIONS` | 50 | Maximum infected functions per entry before truncation |
+| `PHASE1_TIMEOUT_MS` | 600000 | Max time (ms) for one Phase 1 sub-agent (call graph + data flow) |
+| `PHASE2_TIMEOUT_MS` | 600000 | Max time (ms) for one Phase 2 sub-agent (vulnerability analysis) |
+| `PHASE3_TIMEOUT_MS` | 240000 | Max time (ms) for one Phase 3 reviewer (single finding review) |
 
 To change a parameter, edit the value in this file and in `steps/step1_attack_path.md`.
 
@@ -46,7 +49,7 @@ To change a parameter, edit the value in this file and in `steps/step1_attack_pa
 - Do NOT write Python/Shell/Perl scripts to parse C code or extract information
 - Do NOT use Bash to run grep/awk/sed pipelines as analysis shortcuts — use the Read and Grep tools instead
 - Do NOT generate helper programs to automate reasoning steps
-- The ONLY permitted executable is `tools/cg_helper.py` for Phase 1 callgraph queries
+- The ONLY permitted executable is `tools/cg_helper.py` for Phase 1 callgraph queries. Locate it at `<skill_root>/tools/cg_helper.py` where `<skill_root>` is the directory containing this SKILL.md file. Always invoke it with the explicit `--callgraph-path` flag pointing to `<PROJECT_DIR>/.siakam_out/callgraph.json`.
 
 **Violating this rule means the analysis is invalid.** The skill's value comes from LLM judgment applied to source code, not from automated tooling.
 
@@ -121,21 +124,26 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 1. **Read the step document.**
    - Read `steps/step1_attack_path.md` in full. Follow its instructions exactly.
 
-2. **Launch parallel sub-agents.**
+2. **Launch parallel sub-agents (timeout: PHASE1_TIMEOUT_MS ms each).**
+   - Determine `CG_HELPER_PATH`: the absolute path to `tools/cg_helper.py`. This file is located at `<skill_root>/tools/cg_helper.py` where `<skill_root>` is the directory containing this SKILL.md file.
    - For each entry in the task tracker that is NOT marked `[x]`:
-     - Dispatch a sub-agent with the prompt from `step1_attack_path.md`.
-     - The sub-agent receives: entry name, file, line, PROJECT_DIR, HAS_CALLGRAPH, MAX_CALL_DEPTH, MAX_INFECTED_FUNCTIONS, and the exclusion list.
+     - Dispatch a sub-agent with the prompt from `step1_attack_path.md`. Set its timeout to `PHASE1_TIMEOUT_MS` ms.
+     - The sub-agent receives: `ENTRY_NAME`, `ENTRY_FILE`, `ENTRY_LINE`, `PROJECT_DIR`, `HAS_CALLGRAPH`, `MAX_CALL_DEPTH`, `MAX_INFECTED_FUNCTIONS`, `EXCLUSIONS`, and `CG_HELPER_PATH`.
      - The sub-agent writes its output to `<PROJECT_DIR>/.siakam_out/SAA/attack_path/<uid>_attack_path.md`.
    - Launched sub-agents run concurrently.
 
 3. **Monitor and track.**
    - As each sub-agent completes successfully, mark its task `[x]` in tasks.md and update `Last Updated`.
-   - If a sub-agent fails (timeout, malformed output, error), mark it as `FAILED` in tasks.md with the reason.
+   - If a sub-agent fails, classify the failure:
+     - **Timeout**: Mark `FAILED (timeout)` in tasks.md. The sub-agent exceeded `PHASE1_TIMEOUT_MS` ms.
+     - **Malformed output**: Mark `FAILED (malformed)` in tasks.md. The output file is missing, empty, or does not match the required format.
+     - **Error**: Mark `FAILED (error)` with the error message.
 
 4. **Retry failures.**
    - After all sub-agents complete, collect all FAILED entries.
-   - For each failed entry, launch one retry with a fresh sub-agent.
-   - If the retry succeeds, mark it `[x]`. If it fails again, mark it `FAILED (retry exhausted)` and record the entry in a failures manifest string for the final report.
+   - For timeout failures: retry once with `PHASE1_TIMEOUT_MS * 1.5` ms (extended timeout) and a fresh sub-agent. The first run may have timed out due to an unusually large call graph.
+   - For malformed/error failures: retry once with the same timeout and a fresh sub-agent.
+   - If the retry succeeds, mark it `[x]`. If it fails again, mark it `FAILED (retry exhausted)` and record the entry with its failure reason in a failures manifest string for the final report.
 
 5. **Gate check.**
    - If ALL entries failed, skip to Phase 4 (Consolidation) — generate a report with only failed entries.
@@ -153,20 +161,40 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
      - If the entry has more than 10 attack paths: group the infected functions (from the Function Index) into groups of roughly equal size, each group to one sub-agent. Group by function, not by path, to avoid multi-agent re-analysis of the same function.
    - Update tasks.md Phase 2 section with the assigned tasks (one per sub-agent assignment).
 
-3. **Launch parallel sub-agents.**
-   - For each assignment, dispatch a sub-agent with the prompt from `step2_vuln_analysis.md`.
+3. **Instruct sub-agents to write partial results on exhaustion.**
+   - Tell each Phase 2 sub-agent: if you are running out of capacity (token limit, timeout approaching) before completing all assigned functions, write your output file immediately with what you have:
+     - Add `<!-- STATUS: partial -->` below the header.
+     - In the Summary table, note `Functions analyzed: <N> of <M> (partial)`.
+     - List unanalyzed functions under a `## Unanalyzed Functions` section so the main agent can reassign them.
+   - Full output (all functions analyzed) uses `<!-- STATUS: complete -->`.
+
+4. **Launch parallel sub-agents (timeout: PHASE2_TIMEOUT_MS ms each).**
+   - For each assignment, dispatch a sub-agent with the prompt from `step2_vuln_analysis.md`. Set its timeout to `PHASE2_TIMEOUT_MS` ms.
    - The sub-agent receives: the assignment (entry or function group), the attack_path.md file(s), PROJECT_DIR, and the exclusion list.
    - The sub-agent writes its output to `<PROJECT_DIR>/.siakam_out/SAA/vulns/<uid>_vuls.md`. If the entry was split into groups, use group identifiers: `<uid>_group_<N>_vuls.md`.
 
-4. **Monitor, track, and retry.**
-   - Same pattern as Phase 1: mark `[x]` on success, `FAILED` on failure, retry once, record exhausted failures.
+5. **Monitor, track, and retry.**
+   - For each completing sub-agent, check the output file's status marker (`<!-- STATUS: complete -->` or `<!-- STATUS: partial -->`).
+   - Mark `[x]` on success (complete), `PARTIAL` on partial output, `FAILED` with classification (`timeout`, `malformed`, `error`) on failure.
+   - For partial outputs: collect the unanalyzed functions from `## Unanalyzed Functions` and launch a new sub-agent with `PHASE2_TIMEOUT_MS` ms to cover them (smaller assignment, should complete faster).
+   - For total failures: classify and retry once. Timeout failures get `PHASE2_TIMEOUT_MS * 1.5` ms extended timeout. If the retry also fails, mark `FAILED (retry exhausted)`.
+   - Record exhausted failures in a failures manifest string for the final report.
 
-5. **Merge split outputs (if any).**
-   - If an entry's findings were split across multiple group files, merge them into a single `<uid>_vuls.md`. The merge is a simple concatenation of findings (renumbered sequentially).
+6. **Merge split outputs (if any).**
+   - If an entry's findings were split across multiple group files (some complete, some partial, some failed), merge the complete and partial outputs into a single `<uid>_vuls.md`. The merge concatenates findings from all groups and renumbers them sequentially.
+   - If any group produced partial output that still has unanalyzed functions after retry, note them under a `## Gaps` section in the merged file:
+     ```markdown
+     ## Gaps
+     | Function | File:Line | Reason |
+     |----------|-----------|--------|
+     | func_x   | src/x.c:10 | Group 2 sub-agent exhausted; analysis incomplete |
+     ```
+   - If any group failed entirely, note all its assigned functions in the Gaps section.
+   - Do NOT merge files from different entries — only same-entry group files.
 
-6. **Gate check.**
+7. **Gate check.**
    - If ALL Phase 2 tasks failed, skip to Phase 4 with whatever data exists.
-   - Otherwise, populate the Phase 3 section of tasks.md with all findings from all successful `<uid>_vuls.md` files.
+   - Otherwise, populate the Phase 3 section of tasks.md with all findings from all successful and partial `<uid>_vuls.md` files. Do NOT create Phase 3 tasks for findings from the Gaps section.
 
 ### Phase 3: False-Positive Elimination
 
@@ -178,21 +206,30 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
    - **Constraint**: No sub-agent may review a finding it discovered. Track which sub-agent discovered each finding (recorded in the finding's metadata). Assign reviewers such that discoverer != reviewer.
    - Update tasks.md Phase 3 section with the assignments.
 
-3. **Launch parallel sub-agents.**
-   - For each finding, dispatch a reviewer sub-agent with the prompt from `step3_false_positive.md`.
-   - The reviewer receives ONLY: the individual finding context (the `<!-- SECTION: finding -->` block from the vuln report + the vulnerability function's source code + the caller's source code). Do NOT send other findings from the same entry.
+3. **Launch parallel sub-agents (timeout: PHASE3_TIMEOUT_MS ms each).**
+   - For each finding, dispatch a reviewer sub-agent with the prompt from `step3_false_positive.md`. Set its timeout to `PHASE3_TIMEOUT_MS` ms.
+   - The reviewer receives:
+     - The individual finding context (the `<!-- SECTION: finding -->` block from the vuln report).
+     - The attack path chain: the sequence of functions from entry to vulnerability function, with file:line (e.g., `entry @ src/a.c:10 → mid @ src/b.c:20 → vuln @ src/c.c:30`). No Step 1/2 analysis — bare chain only.
+     - `PROJECT_DIR` and `EXCLUSIONS` for locating source files.
+   - The reviewer reads source code themselves using Read tools, starting with the vulnerability function and immediate caller. They may read any function in the attack path chain for context (up to the entry). Do NOT send pre-read source code — let the reviewer read fresh.
    - The reviewer returns: CONFIRMED / FALSE_POSITIVE (with reason) / DISPUTED (with reason).
    - Reviewers do NOT write files. They return their verdict to you (the main agent).
 
 4. **Collect and apply reviews.**
-   - As each reviewer returns, update the corresponding finding's `### Review (Step 3)` block in `<uid>_vuls.md`:
-     - `Reviewed` → yes
-     - `Result` → CONFIRMED / FALSE_POSITIVE
-     - `Reviewer` → sub-agent identifier
-     - `Revised Confidence` → only if the reviewer changed the confidence score
-     - `Exclusion Reason` → only if FALSE_POSITIVE
-   - Update the per-file `## Summary` table with confirmed/false-positive counts.
-   - Mark the task `[x]` in tasks.md.
+   - Each `_vuls.md` file may have findings from multiple reviewers. Since reviewers return verdicts asynchronously, apply each verdict one at a time:
+     1. **Re-read** the current `<uid>_vuls.md` file to get its exact state including any prior review updates already applied.
+     2. Locate the matching `<!-- SECTION: finding -->` block by finding number (`Finding-XXX`).
+     3. Verify the finding block has `Reviewed` → `no` (not yet reviewed). If already reviewed, skip — this is a duplicate verdict.
+     4. Update the `### Review (Step 3)` block:
+        - `Reviewed` → yes
+        - `Result` → CONFIRMED / FALSE_POSITIVE
+        - `Reviewer` → sub-agent identifier
+        - `Revised Confidence` → only if the reviewer changed the confidence score
+        - `Exclusion Reason` → only if FALSE_POSITIVE
+     5. Update the per-file `## Summary` table with the new confirmed/false-positive counts.
+     6. Write the file and mark the task `[x]` in tasks.md.
+   - This read-verify-update-write cycle prevents stale overwrites when multiple verdicts target the same file.
 
 5. **Resolve DISPUTED findings.**
    - For any finding where the reviewer returned DISPUTED, you (the main agent) make the final call.
@@ -200,12 +237,17 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
    - Update the finding's Review block accordingly.
 
 6. **Retry failures.**
-   - For any reviewer that failed, retry once with a different sub-agent. If still failing, leave the finding as unreviewed (`Reviewed` → no) and record it in the failures manifest.
+   - For any reviewer that failed, classify the failure (timeout, malformed verdict, error).
+   - Timeout failures: retry once with a different sub-agent and `PHASE3_TIMEOUT_MS * 1.5` ms extended timeout.
+   - Other failures: retry once with a different sub-agent using the same `PHASE3_TIMEOUT_MS` ms.
+   - If still failing, leave the finding as unreviewed (`Reviewed` → no) and record it in the failures manifest with the failure reason.
 
 ### Phase 4: Consolidation
 
 1. **Scan all `<uid>_vuls.md` files.**
    - Extract every finding with `Result: CONFIRMED`.
+   - Also identify findings where `Reviewed` is still `no` (reviewer failed, verdict never applied). Flag these as **unreviewed** — do NOT include them in confirmed vulnerabilities. List them in the `## Unreviewed Findings` section of Vul_report.md.
+   - Count total unreviewed findings and report them in the Summary table.
 
 2. **Compile `Vul_report.md`.**
    - Write to `<PROJECT_DIR>/.siakam_out/SAA/Vul_report.md`:
@@ -223,8 +265,10 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 |--------|-------|
 | Entries analyzed | <N_success> |
 | Entries failed | <N_failed> |
+| Entries with gaps | <N_gaps> |
 | Confirmed vulnerabilities | <N_confirmed> |
 | HIGH / MEDIUM / LOW | <H> / <M> / <L> |
+| Unreviewed findings | <N_unreviewed> |
 
 ### By Category
 | Category | HIGH | MEDIUM | LOW | Total |
@@ -244,6 +288,14 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 |-------|--------|
 | <entry> @ <file>:<line> | <failure reason> |
 <!-- /SECTION: failures -->
+
+<!-- SECTION: unreviewed -->
+## Unreviewed Findings
+(Only include if there are unreviewed findings)
+| Finding | Entry | Severity | Reason Unreviewed |
+|---------|-------|----------|-------------------|
+| Finding-XXX: <title> | <entry> @ <file>:<line> | HIGH / MEDIUM / LOW | Reviewer sub-agent failed; verdict not applied |
+<!-- /SECTION: unreviewed -->
 
 <!-- SECTION: vulns -->
 ## Confirmed Vulnerabilities
@@ -269,6 +321,8 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
    - **Edge cases**:
      - If no confirmed vulnerabilities: Generate the report with Summary all zeros and note "No confirmed vulnerabilities found." Do NOT omit the report.
      - If all entries failed: Generate the report with `## Failed Entries` listing all failures, Summary showing 0 confirmed.
+     - If there are unreviewed findings: Include them in `## Unreviewed Findings` with the reason (reviewer failure). They are NOT counted as confirmed.
+     - If an entry has gaps (functions analyzed were partial): Count it in the `Entries with gaps` summary row. The gaps are detailed in the per-entry `_vuls.md` file.
 
 ### Phase 5: Cleanup
 

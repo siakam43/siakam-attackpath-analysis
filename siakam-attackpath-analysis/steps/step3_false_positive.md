@@ -23,10 +23,13 @@ Every finding you confirm should be something a security engineer would confiden
 
 You receive exactly ONE finding to review:
 - The finding's `<!-- SECTION: finding -->` block from `<uid>_vuls.md` (containing the Step 2 identification, severity, confidence, description, code snippet)
-- The vulnerability function's complete source code (read fresh from `<PROJECT_DIR>/<file>`)
-- The immediate caller's source code (the function that calls the vulnerability function in the attack path)
+- The complete **attack path chain** for this finding: the sequence of function names with file:line from entry to the vulnerability function (e.g., `driver_ioctl @ src/driver.c:19 → parse_cmd @ src/parser.c:42 → apply_config @ src/config.c:88`). This is provided as metadata only — no Step 1/2 analysis or conclusions are included.
+- `PROJECT_DIR`: Absolute path to the project root, for locating source files.
+- `EXCLUSIONS`: List of excluded files/directories.
 
-You do NOT receive: other findings from the same entry, the attack_path.md file, or any Phase 1 data. This isolation prevents pattern bias.
+You do NOT receive: other findings from the same entry, the attack_path.md file, or any Phase 1/2 data. This isolation prevents pattern bias.
+
+**Reading source code for context:** You may use Read tools to examine any function in the attack path chain. Start with the vulnerability function and its immediate caller. If the immediate caller's source does not provide enough context to verify reachability, data flow, or protective mechanisms, read the next caller up the chain. You may read up to the entry function if needed, but stop there. Do NOT read functions outside the attack path chain.
 
 ## Your Task
 
@@ -59,9 +62,9 @@ For each check below, read the source code with fresh eyes. Do NOT rely on the S
 
 | Check | How to Verify | Result |
 |-------|--------------|--------|
-| **Reachability** | Is the call path from entry to this function real? Can you trace the exact sequence of calls? If any step uses an indirect call (function pointer), has the pointer assignment been confirmed in the source? | PASS / FAIL / UNCERTAIN |
-| **Data-flow validity** | Does entry data really reach the vulnerable parameter or state? Trace independently — follow the data from entry parameters through assignments, struct fields, and function arguments. Do not assume Step 2 was correct. | PASS / FAIL / UNCERTAIN |
-| **Protective mechanisms** | Are there bounds checks, lock acquisitions, permission checks, or NULL checks that protect the vulnerable operation? Check the vulnerability function AND its callers. A check in the caller that sanitizes data before the call is still valid protection. | PASS / FAIL / UNCERTAIN |
+| **Reachability** | Is the call path from entry to this function real? Read each function in the attack path chain (starting from the vulnerability function, moving up). Can you trace the exact sequence of calls? If any step uses an indirect call (function pointer), has the pointer assignment been confirmed in the source? | PASS / FAIL / UNCERTAIN |
+| **Data-flow validity** | Does entry data really reach the vulnerable parameter or state? Read the source of functions in the attack path chain, tracing the data from entry parameters through assignments, struct fields, and function arguments. Do not assume Step 2 was correct. If the chain is deeper than 3 levels, trace at least 3 levels up from the vulnerability function. | PASS / FAIL / UNCERTAIN |
+| **Protective mechanisms** | Are there bounds checks, lock acquisitions, permission checks, or NULL checks that protect the vulnerable operation? Check the vulnerability function AND its callers up the chain. A bounds check in any caller that sanitizes data before the call is valid protection — you must read far enough up the chain to confirm. | PASS / FAIL / UNCERTAIN |
 | **Exploit condition realism** | Are the exploit preconditions actually satisfiable in the target's runtime environment? For example: can the attacker control the physical memory layout? Does the DMA buffer actually come from an external source? Is the race window genuinely exploitable (nanoseconds in kernel context vs. user-triggerable)? | PASS / FAIL / UNCERTAIN |
 | **Compensating controls** | Do compiler mitigations (stack canary, ASLR, W^X, RELRO) or hardware protections (SMMU, MPU, TZASC, IOMMU) eliminate or significantly downgrade the vulnerability? Note: these do NOT make a vulnerability disappear, but they may lower severity from HIGH to MEDIUM or MEDIUM to LOW. | PASS / FAIL / UNCERTAIN |
 | **Code misinterpretation** | Did Step 2 misunderstand the code semantics? Common misinterpretations: a variable that appears unvalidated was actually checked in an inline function or macro; a `void*` cast that Step 2 thought was type confusion is actually a known pattern; a "missing" check is actually performed by the hardware. | PASS / FAIL / UNCERTAIN |

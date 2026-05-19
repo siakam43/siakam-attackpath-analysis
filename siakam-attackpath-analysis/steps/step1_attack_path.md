@@ -20,7 +20,7 @@
 
 > Use ONLY the input files specified in this document. Do not rely on conclusions or judgments from any previous analysis. Analyze from first principles.
 >
-> **Tool constraint:** All source code analysis must be done using Read/Grep/Glob tools. Do NOT write or execute scripts to parse code or automate reasoning. The ONLY executable permitted is `cg_helper.py` for callgraph queries.
+> **Tool constraint:** All source code analysis must be done using Read/Grep/Glob tools. Do NOT write or execute scripts to parse code or automate reasoning. The ONLY executable permitted is `CG_HELPER_PATH` for callgraph queries. Always invoke it with `--callgraph-path <PROJECT_DIR>/.siakam_out/callgraph.json`.
 
 ## Your Input
 
@@ -33,22 +33,29 @@ You receive:
 - `MAX_CALL_DEPTH`: Maximum depth (default 10)
 - `MAX_INFECTED_FUNCTIONS`: Infected function limit (default 50)
 - `EXCLUSIONS`: List of excluded files/directories from `.siakamignore`
+- `CG_HELPER_PATH`: Absolute path to `tools/cg_helper.py` in the skill directory
 
 ## Your Task
 
 For the given entry function, construct a pruned call graph and identify all attack paths. Write the result to `<PROJECT_DIR>/.siakam_out/SAA/attack_path/<uid>_attack_path.md`.
 
-## Step 1.0: Pre-Scan for Custom Data-Transfer Functions
+## Step 1.0: Custom Data-Transfer Function Recognition
 
-Before building the call graph, scan the source files in PROJECT_DIR (respecting EXCLUSIONS) for custom data-transfer functions. These are functions that move data and serve as propagation conduits.
+Some projects define their own data-copy wrappers around memcpy/memmove (e.g., `my_memcpy`, `dma_buffer_copy`, `shmem_xfer`). These propagate attacker data through their destination buffers, just like standard memcpy. Identifying them is critical for correct data-flow tracing in Step 1.2.
 
-Identify functions matching these patterns:
-- **Custom memory copy**: Name contains copy/mem/move/transfer AND body contains memcpy/memmove/strcpy/strncpy calls
-- **Hardware data read**: Reads from DMA buffer, FIFO, MMIO registers (look for mmio_read*, dma_read*, fifo_get*, ioread*)
-- **Serialization**: Packs/unpacks data structures (parse_*, pack_*, marshal_*, unmarshal_*, deserialize_*)
-- **IPC/shared-memory transfer**: Cross-core communication, shared memory writes (ipc_send*, shmem_write*, mbox_*)
+**Do NOT pre-scan all source files.** Instead, recognize data-transfer functions inline during Step 1.1's BFS expansion, when you encounter each callee that is NOT in the terminal list:
 
-Record these function names. They propagate data just like standard memcpy: if F transfers data from location X to Y, and G can read from Y, then G is infected.
+1. Check the callee's **name** against these patterns:
+   - **Custom memory copy**: name contains `copy`, `mem`, `move`, `transfer`
+   - **Hardware data read**: `mmio_read*`, `dma_read*`, `fifo_get*`, `ioread*`
+   - **Serialization**: `parse_*`, `pack_*`, `marshal_*`, `unmarshal_*`, `deserialize_*`
+   - **IPC/shared-memory**: `ipc_send*`, `shmem_write*`, `mbox_*`
+2. If the name matches, **read its function body** (using Read tool at the resolved source location).
+3. If the body contains a call to `memcpy`, `memmove`, `strcpy`, `strncpy`, `memcpy_toio`, `__copy_from_user`, or similar raw memory operations → mark the function as a **data-transfer conduit**.
+4. Record the function name. The destination-buffer argument of a data-transfer conduit propagates taint — downstream functions that read from that buffer are infected (see Step 1.2 Rule 5).
+5. Whether or not the function is a data-transfer conduit, **continue BFS expansion** past it normally — it is NOT a terminal function.
+
+This approach limits analysis to functions that actually appear on the call graph, avoiding an O(all-files) pre-scan.
 
 ## Step 1.1: Build the Call Graph
 
@@ -56,9 +63,11 @@ Record these function names. They propagate data just like standard memcpy: if F
 
 1. Use `cg_helper.py` to load the graph from `<PROJECT_DIR>/.siakam_out/callgraph.json`.
 2. BFS from the entry function:
-   - Query callees: `python3 <skill_dir>/tools/cg_helper.py <FUNC> callee`
-   - For each callee, if it is a standard library/kernel function (see terminal list below), mark as leaf and stop expansion.
-   - If it is a non-terminal function, add it to the queue for the next level.
+   - Query callees: `python3 <CG_HELPER_PATH> <FUNC> callee --callgraph-path <PROJECT_DIR>/.siakam_out/callgraph.json`
+   - For each callee:
+     - If it is a standard library/kernel function (see terminal list below), mark as leaf and stop expansion.
+     - If it is NOT in the terminal list, apply the data-transfer recognition check from Step 1.0 before adding it to the BFS queue. Record any confirmed data-transfer conduits for Step 1.2.
+     - If it is a non-terminal function, add it to the queue for the next level.
    - Stop when depth exceeds MAX_CALL_DEPTH or infected function count exceeds MAX_INFECTED_FUNCTIONS.
 3. **Indirect edge verification**:
    - `high` confidence edges: accept directly. The edge generator has already verified the function pointer assignment.
@@ -78,15 +87,30 @@ Use iterative BFS with intermediate state files. Write intermediate results to `
       - Function pointer assignments: `struct.field = &func` — record as a potential callee
    c. Filter out standard library/kernel terminal functions.
    d. For each callee, locate its source file by searching PROJECT_DIR (respect EXCLUSIONS).
-   e. Write the layer's results to the state file: list of `{caller, callee, file, line, type, confidence}`.
-   f. Queue callees for the next layer.
+   e. For each remaining callee, apply the data-transfer recognition check from Step 1.0 before adding it to the queue. Read the callee's source body and check if it wraps memcpy/memmove/etc. Record confirmed data-transfer conduits for Step 1.2.
+   f. Write the layer's results to the state file: list of `{caller, callee, file, line, type, confidence}`.
+   g. Queue callees for the next layer.
 3. After all layers, compile the complete edge list from all state files.
 
-### Terminal Functions (do not expand past these):
+### Terminal Functions (do not expand past these)
 
-`malloc`, `free`, `kmalloc`, `kfree`, `copy_from_user`, `copy_to_user`, `printk`, `printf`, `sprintf`, `snprintf`, `memcpy`, `memmove`, `memset`, `strcpy`, `strncpy`, `strlen`, `strcmp`, `strncmp`, `strcat`, `strncat`, `memset`, `kzalloc`, `kcalloc`, `vfree`, `vmalloc`, `ioremap`, `iounmap`, `readl`, `writel`, `readb`, `writeb`, `__raw_readl`, `__raw_writel`, `spin_lock`, `spin_unlock`, `mutex_lock`, `mutex_unlock`, `assert`, `BUG`, `WARN`, `BUG_ON`, `WARN_ON`.
+**"Terminal" means BFS stops here — the function has no security-relevant callees. This does NOT mean the function is invisible. The CALLER of a terminal function remains in the pruned graph and IS analyzed in Phase 2.** Phase 2 sees every terminal call the infected function makes and evaluates it accordingly.
+
+| Category | Functions | Why Terminal |
+|----------|-----------|--------------|
+| Memory alloc/free | `malloc`, `free`, `kmalloc`, `kfree`, `kzalloc`, `kcalloc`, `vmalloc`, `vfree`, `devm_kzalloc`, `devm_kmalloc` | No further callees; Phase 2 checks lifetime/size in the caller |
+| Memory/string ops | `memcpy`, `memmove`, `memset`, `strcpy`, `strncpy`, `strlen`, `strcmp`, `strncmp`, `strcat`, `strncat` | No further callees; Phase 2 checks bounds/integrity in the caller |
+| User-kernel copy | `copy_from_user`, `copy_to_user`, `get_user`, `put_user`, `__copy_from_user`, `__copy_to_user` | No further callees; Phase 2 validates the size/source in the caller |
+| MMIO / hardware I/O | `readb`, `readw`, `readl`, `readq`, `writeb`, `writew`, `writel`, `writeq`, `__raw_readl`, `__raw_writel`, `ioread8`, `ioread16`, `ioread32`, `iowrite8`, `iowrite16`, `iowrite32`, `inb`, `outb`, `inl`, `outl` | No further callees; Phase 2 checks register access authorization in the caller |
+| DMA API | `dma_alloc_coherent`, `dma_alloc_noncoherent`, `dma_free_coherent`, `dma_map_single`, `dma_unmap_single`, `dma_map_page`, `dma_map_sg`, `dma_sync_single_for_cpu`, `dma_sync_single_for_device` | No further callees; Phase 2 checks DMA buffer validation in the caller |
+| Physical memory mapping | `ioremap`, `ioremap_nocache`, `ioremap_wc`, `iounmap`, `devm_ioremap`, `devm_ioremap_resource` | No further callees; Phase 2 checks capability/permission in the caller |
+| Kernel logging / format | `printk`, `pr_info`, `pr_warn`, `pr_err`, `pr_debug`, `dev_info`, `dev_warn`, `dev_err`, `printf`, `sprintf`, `snprintf`, `scnprintf`, `vprintk`, `vsprintf`, `vsnprintf` | No further callees; Phase 2 checks format-string vulnerabilities in the caller |
+| Locking / synchronization | `spin_lock`, `spin_unlock`, `spin_lock_irqsave`, `spin_unlock_irqrestore`, `mutex_lock`, `mutex_unlock`, `read_lock`, `read_unlock`, `write_lock`, `write_unlock`, `rcu_read_lock`, `rcu_read_unlock` | No further callees; Phase 2 checks concurrency correctness in the caller |
+| Assert / panic | `WARN`, `WARN_ON`, `BUG`, `BUG_ON`, `assert`, `panic` | No further callees; not security-relevant |
 
 Also terminate on any function whose name starts with `__builtin_`, `__atomic_`, or `__sync_`.
+
+**Custom wrappers around terminal functions**: If the codebase defines a wrapper around a terminal function (e.g., `my_memcpy()`, `dma_buf_alloc()`), the wrapper is NOT automatically terminal — it must be identified via the Step 1.0 data-transfer recognition check. If the wrapper only calls the terminal function (no further callees), BFS still stops there — but the wrapper is recorded as a data-transfer conduit for Step 1.2 data-flow tracing.
 
 ### Cycle Detection:
 

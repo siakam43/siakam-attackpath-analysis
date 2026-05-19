@@ -13,7 +13,7 @@
 
 > Use ONLY the input files specified in this document. Do not rely on conclusions or judgments from any previous analysis. Analyze each function from its source code.
 >
-> **Tool constraint:** All vulnerability analysis must be done by reading source code with Read/Grep/Glob tools and applying LLM reasoning. Do NOT write or execute scripts to parse code, match patterns, or automate analysis. All 8 review methods must be performed manually by reasoning over the source code.
+> **Tool constraint:** All vulnerability analysis must be done by reading source code with Read/Grep/Glob tools and applying LLM reasoning. Do NOT write or execute scripts to parse code, match patterns, or automate analysis. All 9 review methods must be performed manually by reasoning over the source code.
 
 ## Your Input
 
@@ -34,7 +34,7 @@ Review every infected function in your assignment for security vulnerabilities. 
 3. Deduplicate: same function name + same file = same function. Keep the union across all assigned paths.
 4. Sort by call-graph depth (from the Path table; entry = depth 1). Analyze shallowest first.
 
-## Step 2.2: For Each Function, Apply the 8-Method Review
+## Step 2.2: For Each Function, Apply the 9-Method Review
 
 For each function in your sorted, deduplicated list:
 
@@ -46,7 +46,7 @@ For each function in your sorted, deduplicated list:
 
 ### Step 2.2b: Determine Applicability
 
-Scan the function body. For each of the 8 methods below, determine if the method is APPLICABLE:
+Scan the function body. For each of the 9 methods below, determine if the method is APPLICABLE:
 
 | Method | Applicability Check |
 |--------|---------------------|
@@ -58,6 +58,7 @@ Scan the function body. For each of the 8 methods below, determine if the method
 | Authorization gating | Applicable if the function performs security-sensitive operations: physical memory access, register writes, DMA mapping, privilege changes |
 | Secret pattern matching | Applicable if the function contains string literals or static arrays that could be keys, or calls cryptographic APIs |
 | Cross-trust-boundary checks | Applicable if the function reads from shared memory, IPC buffers, hardware registers, or data from a different privilege level (EL1→EL3, non-secure→secure world) |
+| Firmware/hardware security | Applicable if the function configures DMA descriptors, writes to hardware/MMIO registers, configures TrustZone/PMP/MPU regions, performs secure boot operations (image loading/verification), reads from hardware FIFOs or ring buffers, calls ARM SMC/HVC instructions, or configures memory controllers/cache |
 
 ### Step 2.2c: Execute Applicable Methods
 
@@ -115,9 +116,18 @@ For each method marked APPLICABLE, perform the analysis:
 - Check whether the data size/format is validated before parsing (length field validated against buffer size).
 - Record as PASS, FAIL, or N/A.
 
+**9. Firmware/Hardware Security**
+- **DMA**: Are DMA buffer addresses and lengths validated against the actual memory layout? Can an attacker control the DMA descriptor (source address, destination, length)? Is the DMA engine properly isolated (IOMMU/SMMU configured and enabled)?
+- **Hardware register access**: Are security-critical registers (debug, memory controller, TZASC, clock/reset) writable after boot? Is there a lock-after-write pattern for write-once registers? Are debug registers (ETM, CTI, DAP) left enabled in production?
+- **Secure boot**: Are boot images cryptographically verified (signature, hash) before execution? Is there anti-rollback protection (version check, monotonic counter)? Are failed verification paths handled securely (not falling through to boot)?
+- **TrustZone/PMP/MPU**: Are memory region permissions correctly configured? Is non-secure access to secure memory blocked? Are PMP entries locked after configuration?
+- **Hardware FIFO/ring buffer**: Is there underflow/overflow protection on hardware queues? Are FIFO status registers checked before read/write operations?
+- **SMC/HVC calls**: Are SMC call arguments validated? Is the SMC caller ID (non-secure vs secure) checked where appropriate?
+- Record as PASS, FAIL, or N/A.
+
 ### Step 2.2d: Record the Checklist
 
-After analyzing a function, output the 8-method checklist inline in your analysis (not in the final report). This is for your own tracking:
+After analyzing a function, output the 9-method checklist inline in your analysis (not in the final report). This is for your own tracking:
 
 ```
 Function: <name> @ <file>:<line>
@@ -131,9 +141,61 @@ Function: <name> @ <file>:<line>
 | Authorization gating | NO | N/A | no security-sensitive ops |
 | Secret pattern matching | NO | N/A | no crypto material |
 | Cross-trust-boundary checks | YES | PASS | shared mem has magic number check |
+| Firmware/hardware security | NO | N/A | no hardware configuration |
 ```
 
-## Step 2.3: Create Findings
+## Step 2.3: Vulnerability Category System
+
+Assign every finding to exactly one category. If a finding fits multiple categories, assign it to the category that best matches the root cause.
+
+**A. Input Validation**
+- Missing or insufficient validation on external inputs (interface parameters, files, IPC, shared memory)
+- Shared memory data read without integrity/safety checks
+- Trust boundary violations (trusting data from untrusted sources)
+- Missing bounds checking on data from external sources
+- Type confusion from unvalidated input
+- Deserialization of untrusted data without validation
+- Missing validation on inter-process communication (IPC) data
+- Environment variable injection from external sources
+
+**B. Memory Safety**
+- Stack-based or heap-based buffer overflow
+- Out-of-bounds read/write (array index vulnerabilities)
+- Use-after-free (UAF)
+- Double free
+- Null pointer dereference
+- Uninitialized memory access
+- Integer overflow/underflow leading to memory corruption
+- Format string vulnerabilities
+
+**C. System Security**
+- Authentication bypass logic
+- Privilege escalation paths
+- Remote code execution
+- Dynamic code execution
+
+**D. Cryptographic Security**
+- Hardcoded API keys, passwords, or tokens
+- Weak cryptographic algorithms or implementations (DES, RC4, MD4, MD5 for security, SHA1 for signatures, RSA < 2048 bits)
+- Improper key storage or management
+- Cryptographic randomness issues (fixed IV/nonce, predictable RNG)
+- Certificate validation bypasses
+
+**E. Firmware/Embedded-Specific**
+- DMA attack surface (unvalidated DMA buffers)
+- Improper MMIO access control
+- Physical memory mapping security (ioremap without capability check)
+- Secure boot bypass
+- Improper hardware register exposure
+- TrustZone/PMP boundary violations
+- Cross-world (EL1→EL3, non-secure→secure) trust boundary violations
+
+**F. Concurrency**
+- TOCTOU with clear exploitable window
+- Shared state accessed without synchronization in multi-threaded code
+- Demonstrable data race with security impact
+
+## Step 2.4: Create Findings
 
 For each method where the result is FAIL, create a finding.
 
@@ -160,14 +222,29 @@ When in doubt between HIGH and MEDIUM, choose MEDIUM. A false HIGH is worse than
 - **0.7-0.8**: Suspicious pattern. A real concern, but exploitation requires conditions that cannot be fully confirmed from static analysis alone.
 - **Below 0.7**: Do NOT report. Better to miss a theoretical issue than to flood the report with speculative findings.
 
-## Step 2.4: Write Output
+## Step 2.5: Write Output
 
 Write to `<PROJECT_DIR>/.siakam_out/SAA/vulns/<uid>_vuls.md`.
+
+**If you complete all assigned functions**: use the complete output format below. Include `<!-- STATUS: complete -->` after the header.
+
+**If you run out of capacity (token limit, timeout approaching) before finishing all functions**: write immediately with:
+- `<!-- STATUS: partial -->` after the header.
+- Summary notes: `Functions analyzed: <N> of <M> (partial)`.
+- List unanalyzed functions under `## Unanalyzed Functions`:
+  ```markdown
+  ## Unanalyzed Functions
+  | Function | File:Line | Reason |
+  |----------|-----------|--------|
+  | <func>   | <file>:<line> | Sub-agent capacity exhausted |
+  ```
+- Include all findings for functions you DID complete. The main agent will reassign unanalyzed functions.
 
 Use the exact format below. The `### Review (Step 3)` fields MUST be left as shown — they will be filled by Phase 3. Do not write anything in those fields.
 
 ```markdown
 <!-- SECTION: header -->
+<!-- STATUS: complete -->
 # Vulnerability Analysis: <entry_name>
 **Entry**: <entry_name> @ <file>:<line>
 **Analysis Date**: <YYYY-MM-DD>
@@ -178,6 +255,7 @@ Use the exact format below. The `### Review (Step 3)` fields MUST be left as sho
 | Status | Count |
 |--------|-------|
 | Total findings | <N> |
+| Functions analyzed | <N> of <M> |
 | Confirmed | *to be filled in Step 3* |
 | False positive | *to be filled in Step 3* |
 <!-- /SECTION: summary -->
@@ -225,10 +303,10 @@ Repeat the `<!-- SECTION: finding -->` block for each finding. Number them seque
 
 ### Edge Cases
 
-- **No vulnerabilities found in a function**: The function's 8-method checklist shows all PASS or N/A. Move to the next function. Do NOT create an empty finding.
+- **No vulnerabilities found in a function**: The function's 9-method checklist shows all PASS or N/A. Move to the next function. Do NOT create an empty finding.
 - **No vulnerabilities found in the entire assignment**: Still generate the `_vuls.md` file. Summary shows "Total findings: 0". The file is still required as a contract for Phase 3.
 
-## Step 2.5: Report Completion
+## Step 2.6: Report Completion
 
 Report to the main agent:
 - Number of functions analyzed
