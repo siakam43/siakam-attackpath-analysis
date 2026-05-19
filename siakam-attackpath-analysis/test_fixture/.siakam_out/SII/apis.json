@@ -1,0 +1,23 @@
+{
+  "project": "test_fixture",
+  "analysis_date": "2026-05-19",
+  "total_candidates": 1,
+  "confirmed_interfaces": 1,
+  "summary": {
+    "high_confidence": 1,
+    "medium_confidence": 0,
+    "exclusion_reasons": {}
+  },
+  "interfaces": [
+    {
+      "name": "driver_ioctl",
+      "file": "src/driver.c",
+      "line": 19,
+      "confidence": "high",
+      "analysis": "Primary ioctl handler exposed to userspace. Receives cmd and arg from untrusted userspace."
+    }
+  ],
+  "failures": [],
+  "errors": [],
+  "warnings": []
+}

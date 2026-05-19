@@ -1,0 +1,9 @@
+# Claude/OMC state
+.omc/
+
+# Generated analysis output (from test runs)
+test_fixture/.siakam_out/SAA/
+
+# Python
+__pycache__/
+*.pyc

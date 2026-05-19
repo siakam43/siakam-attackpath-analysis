@@ -1,0 +1,24 @@
+{
+  "nodes": [
+    {"name": "driver_ioctl", "file": "src/driver.c", "line_start": 19, "has_body": true, "body_file": "src/driver.c", "body_line_start": 19, "body_line_end": 90},
+    {"name": "validate_input", "file": "src/driver.c", "line_start": 93, "has_body": true, "body_file": "src/driver.c", "body_line_start": 93, "body_line_end": 97},
+    {"name": "process_input", "file": "src/driver.c", "line_start": 99, "has_body": true, "body_file": "src/driver.c", "body_line_start": 99, "body_line_end": 105},
+    {"name": "send_response", "file": "src/driver.c", "line_start": 107, "has_body": true, "body_file": "src/driver.c", "body_line_start": 107, "body_line_end": 113},
+    {"name": "update_config", "file": "src/ops.c", "line_start": 8, "has_body": true, "body_file": "src/ops.c", "body_line_start": 8, "body_line_end": 12},
+    {"name": "get_config", "file": "src/ops.c", "line_start": 14, "has_body": true, "body_file": "src/ops.c", "body_line_start": 14, "body_line_end": 19},
+    {"name": "default_handler", "file": "src/ops.c", "line_start": 22, "has_body": true, "body_file": "src/ops.c", "body_line_start": 22, "body_line_end": 28}
+  ],
+  "edges": [
+    {"caller": "driver_ioctl", "callee": "kmalloc", "type": "direct", "file": "src/driver.c", "line": 32},
+    {"caller": "driver_ioctl", "callee": "kmalloc", "type": "direct", "file": "src/driver.c", "line": 40},
+    {"caller": "driver_ioctl", "callee": "memcpy", "type": "direct", "file": "src/driver.c", "line": 50},
+    {"caller": "driver_ioctl", "callee": "kfree", "type": "direct", "file": "src/driver.c", "line": 63},
+    {"caller": "driver_ioctl", "callee": "kfree", "type": "direct", "file": "src/driver.c", "line": 83},
+    {"caller": "driver_ioctl", "callee": "ioremap", "type": "direct", "file": "src/driver.c", "line": 73},
+    {"caller": "driver_ioctl", "callee": "validate_input", "type": "direct", "file": "src/driver.c", "line": 37},
+    {"caller": "driver_ioctl", "callee": "update_config", "type": "direct", "file": "src/driver.c", "line": 56},
+    {"caller": "driver_ioctl", "callee": "get_config", "type": "direct", "file": "src/driver.c", "line": 55},
+    {"caller": "validate_input", "callee": "process_input", "type": "direct", "file": "src/driver.c", "line": 95},
+    {"caller": "driver_ioctl", "callee": "default_handler", "type": "indirect", "uid": "a1b2c3d4", "confidence": "high"}
+  ]
+}

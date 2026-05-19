@@ -1,0 +1,182 @@
+{
+  "nodes": [
+    {
+      "name": "driver_setup",
+      "file": "driver.c",
+      "line_start": 6,
+      "has_body": true,
+      "body_file": "driver.c",
+      "body_line_start": 6,
+      "body_line_end": 13
+    },
+    {
+      "name": "driver_teardown",
+      "file": "driver.c",
+      "line_start": 15,
+      "has_body": true,
+      "body_file": "driver.c",
+      "body_line_start": 15,
+      "body_line_end": 20
+    },
+    {
+      "name": "driver_do_work",
+      "file": "driver.c",
+      "line_start": 22,
+      "has_body": true,
+      "body_file": "driver.c",
+      "body_line_start": 22,
+      "body_line_end": 25
+    },
+    {
+      "name": "set_worker",
+      "file": "main.c",
+      "line_start": 11,
+      "has_body": true,
+      "body_file": "main.c",
+      "body_line_start": 11,
+      "body_line_end": 13
+    },
+    {
+      "name": "execute_work",
+      "file": "main.c",
+      "line_start": 15,
+      "has_body": true,
+      "body_file": "main.c",
+      "body_line_start": 15,
+      "body_line_end": 20
+    },
+    {
+      "name": "main",
+      "file": "main.c",
+      "line_start": 22,
+      "has_body": true,
+      "body_file": "main.c",
+      "body_line_start": 22,
+      "body_line_end": 29
+    },
+    {
+      "name": "my_driver_init",
+      "file": "ops.c",
+      "line_start": 3,
+      "has_body": true,
+      "body_file": "ops.c",
+      "body_line_start": 3,
+      "body_line_end": 3
+    },
+    {
+      "name": "my_driver_process",
+      "file": "ops.c",
+      "line_start": 4,
+      "has_body": true,
+      "body_file": "ops.c",
+      "body_line_start": 4,
+      "body_line_end": 7
+    },
+    {
+      "name": "my_driver_cleanup",
+      "file": "ops.c",
+      "line_start": 8,
+      "has_body": true,
+      "body_file": "ops.c",
+      "body_line_start": 8,
+      "body_line_end": 8
+    },
+    {
+      "name": "driver_register",
+      "file": "ops.c",
+      "line_start": 16,
+      "has_body": true,
+      "body_file": "ops.c",
+      "body_line_start": 16,
+      "body_line_end": 19
+    },
+    {
+      "name": "driver_process_data",
+      "file": "ops.c",
+      "line_start": 21,
+      "has_body": true,
+      "body_file": "ops.c",
+      "body_line_start": 21,
+      "body_line_end": 26
+    }
+  ],
+  "edges": [
+    {
+      "caller": "driver_setup",
+      "callee": "malloc",
+      "type": "direct",
+      "file": "driver.c",
+      "line": 7
+    },
+    {
+      "caller": "driver_setup",
+      "callee": "driver_register",
+      "type": "direct",
+      "file": "driver.c",
+      "line": 11
+    },
+    {
+      "caller": "driver_teardown",
+      "callee": "free",
+      "type": "direct",
+      "file": "driver.c",
+      "line": 17
+    },
+    {
+      "caller": "driver_do_work",
+      "callee": "driver_process_data",
+      "type": "direct",
+      "file": "driver.c",
+      "line": 24
+    },
+    {
+      "caller": "main",
+      "callee": "driver_setup",
+      "type": "direct",
+      "file": "main.c",
+      "line": 23
+    },
+    {
+      "caller": "main",
+      "callee": "set_worker",
+      "type": "direct",
+      "file": "main.c",
+      "line": 24
+    },
+    {
+      "caller": "main",
+      "callee": "execute_work",
+      "type": "direct",
+      "file": "main.c",
+      "line": 25
+    },
+    {
+      "caller": "main",
+      "callee": "printf",
+      "type": "direct",
+      "file": "main.c",
+      "line": 26
+    },
+    {
+      "caller": "main",
+      "callee": "driver_teardown",
+      "type": "direct",
+      "file": "main.c",
+      "line": 27
+    },
+    {
+      "caller": "execute_work",
+      "callee": "driver_do_work",
+      "type": "indirect",
+      "uid": "ef769786",
+      "confidence": "high"
+    },
+    {
+      "caller": "driver_process_data",
+      "callee": "my_driver_process",
+      "type": "indirect",
+      "uid": "883aaa05",
+      "confidence": "high"
+    }
+  ]
+}
