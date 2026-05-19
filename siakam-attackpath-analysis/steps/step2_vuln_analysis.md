@@ -233,6 +233,19 @@ When in doubt between HIGH and MEDIUM, choose MEDIUM. A false HIGH is worse than
 
 Write to `<PROJECT_DIR>/.siakam_out/SAA/vulns/<uid>_vuls.md`.
 
+### FORMAT COMPLIANCE — READ BEFORE WRITING
+
+**The output format below is MANDATORY, not a suggestion.** Phase 3 and Phase 4 parse this file by matching `<!-- SECTION: finding -->` markers, `Finding-XXX` numbers, and `### Review (Step 3)` tables. If you deviate from the format, the entire Phase 3 pipeline breaks.
+
+**These deviations are STRICTLY FORBIDDEN:**
+- Do NOT rename `Finding-XXX` to `VULN-N`, `ISSUE-N`, or any other naming scheme. Use exactly `Finding-001`, `Finding-002`, ...
+- Do NOT reorganize findings by attack path or by category. One flat list of `<!-- SECTION: finding -->` blocks, numbered sequentially.
+- Do NOT add extra sections between findings beyond the standard `<!-- SECTION: finding -->` blocks.
+- Do NOT write `N/A` or any other value into the `### Review (Step 3)` fields. They MUST remain exactly `*to be filled in Step 3*`.
+- Do NOT skip the `### Review (Step 3)` table even if you think the finding is obviously a vulnerability. Every finding MUST have this table with all placeholder values.
+
+**Before writing, check:** Does my output match the structure below character-for-character for the required markers and table fields? If not, fix it before writing.
+
 **If you complete all assigned functions**: use the complete output format below. Include `<!-- STATUS: complete -->` after the header.
 
 **If you run out of capacity (token limit, timeout approaching) before finishing all functions**: write immediately with:
@@ -245,9 +258,11 @@ Write to `<PROJECT_DIR>/.siakam_out/SAA/vulns/<uid>_vuls.md`.
   |----------|-----------|--------|
   | <func>   | <file>:<line> | Sub-agent capacity exhausted |
   ```
-- Include all findings for functions you DID complete. The main agent will reassign unanalyzed functions.
+- Include all findings for functions you DID complete, in the standard format below. The main agent will reassign unanalyzed functions.
 
-Use the exact format below. The `### Review (Step 3)` fields MUST be left as shown — they will be filled by Phase 3. Do not write anything in those fields.
+### Required Output Template
+
+The `### Review (Step 3)` fields MUST be left as shown — they will be filled by Phase 3. Do not write anything in those fields.
 
 ```markdown
 <!-- SECTION: header -->
@@ -313,9 +328,26 @@ Repeat the `<!-- SECTION: finding -->` block for each finding. Number them seque
 - **No vulnerabilities found in a function**: The function's 9-method checklist shows all PASS or N/A. Move to the next function. Do NOT create an empty finding.
 - **No vulnerabilities found in the entire assignment**: Still generate the `_vuls.md` file. Summary shows "Total findings: 0". The file is still required as a contract for Phase 3.
 
-## Step 2.6: Report Completion
+## Step 2.6: Self-Verification Before Completion
 
-Report to the main agent:
+**DO NOT report completion until you have verified ALL of the following.** Read your output file and confirm:
+
+1. `<!-- SECTION: header -->` and `<!-- /SECTION: header -->` markers exist.
+2. `<!-- STATUS: complete -->` (or `partial`) is present below the header.
+3. `<!-- SECTION: summary -->` and `<!-- /SECTION: summary -->` markers exist.
+4. Each finding is wrapped in `<!-- SECTION: finding -->` ... `<!-- /SECTION: finding -->` markers.
+5. Each finding is numbered exactly as `## Finding-001:`, `## Finding-002:`, etc. — NOT `VULN-N`, `ISSUE-N`, or any other scheme.
+6. Each finding has an `### Identification (Step 2)` section with a `| Field | Value |` table.
+7. Each finding has an `### Review (Step 3)` section with a `| Field | Value |` table where ALL value fields read exactly `*to be filled in Step 3*`.
+8. No finding's Review table has `N/A`, `yes`, `CONFIRMED`, or any other value written into it.
+9. Finding numbers are sequential with no gaps or duplicates.
+
+**If ANY check fails, fix the output file before reporting.** A single format deviation breaks Phase 3.
+
+## Step 2.7: Report Completion
+
+After passing the self-verification, report to the main agent:
 - Number of functions analyzed
 - Number of findings created
+- Confirmation that format self-verification passed (all 9 checks)
 - Per-function checklist summary (function name, methods passed, methods failed)

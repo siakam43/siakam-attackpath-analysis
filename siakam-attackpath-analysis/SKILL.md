@@ -175,7 +175,12 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 
 5. **Monitor, track, and retry.**
    - For each completing sub-agent, check the output file's status marker (`<!-- STATUS: complete -->` or `<!-- STATUS: partial -->`).
-   - Mark `[x]` on success (complete), `PARTIAL` on partial output, `FAILED` with classification (`timeout`, `malformed`, `error`) on failure.
+   - **Format validation** (before marking success): verify that each `_vuls.md` file contains:
+     - `<!-- SECTION: finding -->` markers wrapping each finding
+     - `## Finding-001:` format (NOT `VULN-N` or other schemes)
+     - `### Review (Step 3)` tables with `*to be filled in Step 3*` in ALL value fields
+   - If any format check fails, mark the output `FAILED (malformed)` — do NOT accept it.
+   - Mark `[x]` on success (complete + format-valid), `PARTIAL` on partial output, `FAILED` with classification (`timeout`, `malformed`, `format-violation`, `error`) on failure.
    - For partial outputs: collect the unanalyzed functions from `## Unanalyzed Functions` and launch a new sub-agent with `PHASE2_TIMEOUT_MS` ms to cover them (smaller assignment, should complete faster).
    - For total failures: classify and retry once. Timeout failures get `PHASE2_TIMEOUT_MS * 1.5` ms extended timeout. If the retry also fails, mark `FAILED (retry exhausted)`.
    - Record exhausted failures in a failures manifest string for the final report.
