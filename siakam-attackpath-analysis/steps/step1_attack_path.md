@@ -67,7 +67,6 @@ This approach limits analysis to functions that actually appear on the call grap
      - If it is a non-terminal function, add it to the queue for the next level.
    - Stop when depth exceeds MAX_CALL_DEPTH or infected function count exceeds MAX_INFECTED_FUNCTIONS.
 3. Resolve each callee's `file` path relative to PROJECT_DIR to get the source location.
-4. Trust the edge confidence from callgraph.json: all edges (direct, indirect at any confidence level) are accepted as-is. Phase 3 reviewers will independently verify edges with medium/low confidence for confirmed findings.
 
 ### Terminal Functions (do not expand past these)
 
@@ -206,7 +205,6 @@ If analysis was truncated, add this after the summary section:
 
 - **No infected callees**: The report has 1 path (entry only), 1 node in the pruned graph. The entry function's own code MUST still be analyzed for vulnerabilities. The entry is both source and leaf.
 - **Cycle detected**: The path ends at the function before the cycle with annotation `[terminated at cycle: <func>]`. The cycle function is still listed in the Function Index.
-- **Indirect edge uncertain**: Annotate the edge in the path table with a superscript note: `(indirect, confidence: low)` in the Data Flow Mechanism column.
 
 ## Step 1.5: Report Completion
 

@@ -60,6 +60,10 @@ def main():
     else:
         results = query_callee(cg, args.func)
 
+    for edge in results:
+        if edge.get("type") == "indirect":
+            edge.pop("confidence", None)
+
     print(json.dumps(results, indent=2))
 
 

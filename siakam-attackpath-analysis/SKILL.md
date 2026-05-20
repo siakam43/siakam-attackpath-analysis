@@ -202,7 +202,7 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 
 2. **Assign one reviewer per entry.**
    - For each entry with Phase 2 findings (successful or partial), assign one reviewer sub-agent.
-   - **Constraint**: The reviewer must be different from the Phase 2 sub-agent that analyzed this entry. For example, with entries A, B, C: the Phase 3 reviewer for A could be the sub-agent that handled Phase 2 for B.
+   - Dispatch a fresh sub-agent for each entry.
    - Each reviewer receives ALL findings from one `<uid>_vuls.md` file, plus the full attack path context for each finding.
    - Update tasks.md Phase 3 section with one task per entry.
 
