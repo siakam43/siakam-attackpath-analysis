@@ -87,10 +87,21 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
      - If still duplicate (same file, different lines): `<entry.name>_<source_file_basename>_<line>`
    - The identity string for cross-references is `<entry.name> @ <entry.file>:<entry.line>`.
 
-6. **Initialize output directories and task tracker.**
+6. **Check for resume.**
+   - If `<PROJECT_DIR>/.siakam_out/SAA/tasks.md` already exists (from a previous interrupted run):
+     - Read it. Verify the task list structure has Phase 1, Phase 2, and Phase 3 sections.
+     - Identify tasks marked `[x]` as complete.
+     - Verify that the corresponding output files exist on disk. If a task is marked `[x]` but the output file is missing, mark it as `[ ]` and re-run it.
+     - If new entries exist in `apis.json` that are not in the task tracker, append them as `[ ]` under the appropriate phase.
+     - Skip completed tasks in subsequent phases.
+     - Keep the existing `Started` timestamp, update `Last Updated`.
+     - Proceed to Phase 1 (do NOT re-create the task tracker).
+
+7. **Initialize output directories and task tracker (first run only).**
+   - If `tasks.md` does NOT exist (no resume), create the directories and the task tracker:
    - Create `<PROJECT_DIR>/.siakam_out/SAA/attack_path/`
    - Create `<PROJECT_DIR>/.siakam_out/SAA/vulns/`
-   - Create the task tracker at `<PROJECT_DIR>/.siakam_out/SAA/tasks.md`:
+   - Create `<PROJECT_DIR>/.siakam_out/SAA/tasks.md`:
 
 ```markdown
 # Task Tracker
@@ -111,13 +122,6 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 ## Phase 3: False-Positive Elimination
 (to be populated after Phase 2)
 ```
-
-7. **Check for resume.**
-   - If `tasks.md` already existed before you created it (from a previous interrupted run):
-     - Read it. Identify tasks marked `[x]` as complete.
-     - Verify that the corresponding output files exist on disk. If a task is marked `[x]` but the output file is missing, mark it as `[ ]` and re-run it.
-     - Skip completed tasks in subsequent phases.
-     - Keep the existing `Started` timestamp, update `Last Updated`.
 
 ### Phase 1: Attack Path Identification
 

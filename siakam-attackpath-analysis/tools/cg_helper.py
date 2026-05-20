@@ -16,13 +16,13 @@ from pathlib import Path
 
 def load_callgraph(path):
     if not path.exists():
-        print(json.dumps({"error": f"callgraph.json not found at {path}"}))
+        print(json.dumps({"error": f"callgraph.json not found at {path}"}), file=sys.stderr)
         sys.exit(1)
     with open(path, "r") as f:
         try:
             return json.load(f)
         except json.JSONDecodeError as e:
-            print(json.dumps({"error": f"Malformed callgraph.json: {e}"}))
+            print(json.dumps({"error": f"Malformed callgraph.json: {e}"}), file=sys.stderr)
             sys.exit(1)
 
 
