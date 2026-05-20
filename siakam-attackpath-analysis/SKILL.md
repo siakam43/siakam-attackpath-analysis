@@ -23,10 +23,12 @@ Analyze C codebases for attack paths and security vulnerabilities.
 | `MAX_CALL_DEPTH` | 10 | Maximum nodes in an attack path (entry to leaf) |
 | `MAX_INFECTED_FUNCTIONS` | 50 | Maximum infected functions per entry before truncation |
 | `PHASE1_TIMEOUT_MS` | 600000 | Max time (ms) for one Phase 1 sub-agent (call graph + data flow) |
-| `PHASE2_TIMEOUT_MS` | 600000 | Max time (ms) for one Phase 2 sub-agent (vulnerability analysis) |
+| `PHASE2_TIMEOUT_BASE_MS` | 300000 | Base time (ms) for Phase 2 sub-agent setup, file I/O, and report writing |
+| `PHASE2_TIMEOUT_PER_FUNC_MS` | 60000 | Additional time (ms) per infected function in the entry |
 | `PHASE3_TIMEOUT_MS` | 240000 | Max time (ms) for one Phase 3 reviewer (single finding review) |
 
-To change a parameter, edit the value in this file and in `steps/step1_attack_path.md`.
+A Phase 2 sub-agent's timeout = `PHASE2_TIMEOUT_BASE_MS + (num_infected_functions * PHASE2_TIMEOUT_PER_FUNC_MS)`.
+To change a parameter, edit the value in this file. `MAX_CALL_DEPTH` and `MAX_INFECTED_FUNCTIONS` must also be updated in `steps/step1_attack_path.md`.
 
 ## Terminology
 
@@ -158,12 +160,12 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 1. **Read the step document.**
    - Read `steps/step2_vuln_analysis.md` in full. Follow its instructions exactly.
 
-2. **Determine sub-agent grouping.**
+2. **Assign one sub-agent per entry.**
    - For each entry with a successful Phase 1 output:
-     - Read its `<uid>_attack_path.md` and check the `## Function Index`.
-     - If the entry has 10 or fewer attack paths: assign the entire entry to one sub-agent.
-     - If the entry has more than 10 attack paths: group the infected functions (from the Function Index) into groups of roughly equal size, each group to one sub-agent. Group by function, not by path, to avoid multi-agent re-analysis of the same function.
-   - Update tasks.md Phase 2 section with the assigned tasks (one per sub-agent assignment).
+     - Read its `<uid>_attack_path.md` and count infected functions from the `## Function Index`.
+     - Assign one sub-agent for that entry. Each sub-agent receives the full `<uid>_attack_path.md` file, which contains all attack paths and the complete Function Index.
+     - Compute the sub-agent's timeout: `PHASE2_TIMEOUT_BASE_MS + (num_infected_functions * PHASE2_TIMEOUT_PER_FUNC_MS)`.
+   - Update tasks.md Phase 2 section with one task per entry.
 
 3. **Instruct sub-agents to write partial results on exhaustion.**
    - Tell each Phase 2 sub-agent: if you are running out of capacity (token limit, timeout approaching) before completing all assigned functions, write your output file immediately with what you have:
@@ -172,38 +174,26 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
      - List unanalyzed functions under a `## Unanalyzed Functions` section so the main agent can reassign them.
    - Full output (all functions analyzed) uses `<!-- STATUS: complete -->`.
 
-4. **Launch parallel sub-agents (timeout: PHASE2_TIMEOUT_MS ms each).**
-   - For each assignment, dispatch a sub-agent with the prompt from `step2_vuln_analysis.md`. Set its timeout to `PHASE2_TIMEOUT_MS` ms.
-   - The sub-agent receives: the assignment (entry or function group), the attack_path.md file(s), PROJECT_DIR, and the exclusion list.
-   - The sub-agent writes its output to `<PROJECT_DIR>/.siakam_out/SAA/vulns/<uid>_vuls.md`. If the entry was split into groups, use group identifiers: `<uid>_group_<N>_vuls.md`.
+4. **Launch parallel sub-agents (dynamic timeout per entry).**
+   - For each entry, dispatch a sub-agent with the prompt from `step2_vuln_analysis.md`. Set its timeout to the computed value from step 2.
+   - The sub-agent receives: the entry name, the full `<uid>_attack_path.md` file, `PROJECT_DIR`, and the exclusion list.
+   - The sub-agent writes its output to `<PROJECT_DIR>/.siakam_out/SAA/vulns/<uid>_vuls.md`.
 
 5. **Monitor, track, and retry.**
    - For each completing sub-agent, check the output file's status marker (`<!-- STATUS: complete -->` or `<!-- STATUS: partial -->`).
-   - **Format validation** (before marking success): verify that each `_vuls.md` file contains:
+   - **Format validation** (before marking success): verify that the `_vuls.md` file contains:
      - `<!-- SECTION: finding -->` markers wrapping each finding
      - `## Finding-001:` format (NOT `VULN-N` or other schemes)
      - `### Review (Step 3)` tables with `*to be filled in Step 3*` in ALL value fields
    - If any format check fails, mark the output `FAILED (malformed)` — do NOT accept it.
    - Mark `[x]` on success (complete + format-valid), `PARTIAL` on partial output, `FAILED` with classification (`timeout`, `malformed`, `format-violation`, `error`) on failure.
-   - For partial outputs: collect the unanalyzed functions from `## Unanalyzed Functions` and launch a new sub-agent with `PHASE2_TIMEOUT_MS` ms to cover them (smaller assignment, should complete faster).
-   - For total failures: classify and retry once. Timeout failures get `PHASE2_TIMEOUT_MS * 1.5` ms extended timeout. If the retry also fails, mark `FAILED (retry exhausted)`.
+   - For partial outputs: collect the unanalyzed functions from `## Unanalyzed Functions` and launch a new sub-agent with the computed timeout to cover them (smaller assignment, should complete faster). Append the new findings to the same `<uid>_vuls.md` file and renumber sequentially.
+   - For total failures: classify and retry once. Timeout failures get `PHASE2_TIMEOUT_BASE_MS + (num_infected_functions * PHASE2_TIMEOUT_PER_FUNC_MS * 1.5)` ms extended timeout. If the retry also fails, mark `FAILED (retry exhausted)`.
    - Record exhausted failures in a failures manifest string for the final report.
 
-6. **Merge split outputs (if any).**
-   - If an entry's findings were split across multiple group files (some complete, some partial, some failed), merge the complete and partial outputs into a single `<uid>_vuls.md`. The merge concatenates findings from all groups and renumbers them sequentially.
-   - If any group produced partial output that still has unanalyzed functions after retry, note them under a `## Gaps` section in the merged file:
-     ```markdown
-     ## Gaps
-     | Function | File:Line | Reason |
-     |----------|-----------|--------|
-     | func_x   | src/x.c:10 | Group 2 sub-agent exhausted; analysis incomplete |
-     ```
-   - If any group failed entirely, note all its assigned functions in the Gaps section.
-   - Do NOT merge files from different entries — only same-entry group files.
-
-7. **Gate check.**
+6. **Gate check.**
    - If ALL Phase 2 tasks failed, skip to Phase 4 with whatever data exists.
-   - Otherwise, populate the Phase 3 section of tasks.md with all findings from all successful and partial `<uid>_vuls.md` files. Do NOT create Phase 3 tasks for findings from the Gaps section.
+   - Otherwise, populate the Phase 3 section of tasks.md with all findings from all successful and partial `<uid>_vuls.md` files. Do NOT create Phase 3 tasks for findings listed in `## Unanalyzed Functions` sections.
 
 ### Phase 3: False-Positive Elimination
 

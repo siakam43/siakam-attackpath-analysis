@@ -18,14 +18,14 @@
 ## Your Input
 
 You receive:
-- `ASSIGNMENT`: Either an entry name (and you analyze all its attack paths) or a list of infected functions (a group from a large entry)
-- `ATTACK_PATH_FILES`: Paths to one or more `<uid>_attack_path.md` files
+- `ENTRY_NAME`: The entry function you are analyzing
+- `ATTACK_PATH_FILE`: Path to `<uid>_attack_path.md` — the full Phase 1 output for this entry, containing all attack paths, the complete Function Index, and per-function labels
 - `PROJECT_DIR`: Absolute path to the project root
 - `EXCLUSIONS`: List of excluded files/directories
 
 ## Your Task
 
-Review every infected function in your assignment for security vulnerabilities. Write findings to `<PROJECT_DIR>/.siakam_out/SAA/vulns/<uid>_vuls.md` (or `<uid>_group_<N>_vuls.md` for groups).
+Review every infected function in the attack path file for security vulnerabilities. Write findings to `<PROJECT_DIR>/.siakam_out/SAA/vulns/<uid>_vuls.md`.
 
 ## Step 2.1: Collect and Deduplicate Functions
 
