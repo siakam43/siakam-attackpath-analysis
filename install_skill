@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+
+SKILL_DIR=".claude/skills/siakam-attackpath-analysis"
+SRC_DIR="siakam-attackpath-analysis"
+
+rm -rf "$SKILL_DIR"
+cp -r "$SRC_DIR" "$SKILL_DIR"
+echo "[install_skill] installed to $SKILL_DIR"
