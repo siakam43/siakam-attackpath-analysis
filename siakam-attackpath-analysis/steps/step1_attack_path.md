@@ -29,7 +29,6 @@ You receive:
 - `ENTRY_FILE`: Path to the source file (relative to PROJECT_DIR)
 - `ENTRY_LINE`: Line number of the function definition
 - `PROJECT_DIR`: Absolute path to the project root
-- `HAS_CALLGRAPH`: "true" or "false"
 - `MAX_CALL_DEPTH`: Maximum depth (default 10)
 - `MAX_INFECTED_FUNCTIONS`: Infected function limit (default 50)
 - `EXCLUSIONS`: List of excluded files/directories from `.siakamignore`
@@ -59,8 +58,6 @@ This approach limits analysis to functions that actually appear on the call grap
 
 ## Step 1.1: Build the Call Graph
 
-### If HAS_CALLGRAPH is true:
-
 1. Use `cg_helper.py` to load the graph from `<PROJECT_DIR>/.siakam_out/callgraph.json`.
 2. BFS from the entry function:
    - Query callees: `python3 <CG_HELPER_PATH> <FUNC> callee --callgraph-path <PROJECT_DIR>/.siakam_out/callgraph.json`
@@ -69,28 +66,8 @@ This approach limits analysis to functions that actually appear on the call grap
      - If it is NOT in the terminal list, apply the data-transfer recognition check from Step 1.0 before adding it to the BFS queue. Record any confirmed data-transfer conduits for Step 1.2.
      - If it is a non-terminal function, add it to the queue for the next level.
    - Stop when depth exceeds MAX_CALL_DEPTH or infected function count exceeds MAX_INFECTED_FUNCTIONS.
-3. **Indirect edge verification**:
-   - `high` confidence edges: accept directly. The edge generator has already verified the function pointer assignment.
-   - `medium` and `low` confidence edges: read the caller's source code. Look for the function pointer assignment (e.g., `ops->process = my_handler`, `ctx->callback = &func`). Verify the assignment is reachable from the call site. Even if uncertain, keep the edge but annotate it with the confidence level.
-4. Resolve each callee's `file` path relative to PROJECT_DIR to get the source location.
-
-### If HAS_CALLGRAPH is false:
-
-Use iterative BFS with intermediate state files. Write intermediate results to `<PROJECT_DIR>/.siakam_out/SAA/.step1_state/<uid>_layer_<N>.json`.
-
-1. **Layer 0**: The entry function is layer 0. Read its source body from `<PROJECT_DIR>/<ENTRY_FILE>`.
-2. **For each layer** (repeat until no more infected functions or depth exceeds MAX_CALL_DEPTH):
-   a. For each function in the current layer, read its source body.
-   b. Identify all function calls within the body:
-      - Direct calls: `func(args)` — extract the function name
-      - Indirect calls: `ptr->callback(args)`, `ops.func(args)` — trace the function pointer assignment
-      - Function pointer assignments: `struct.field = &func` — record as a potential callee
-   c. Filter out standard library/kernel terminal functions.
-   d. For each callee, locate its source file by searching PROJECT_DIR (respect EXCLUSIONS).
-   e. For each remaining callee, apply the data-transfer recognition check from Step 1.0 before adding it to the queue. Read the callee's source body and check if it wraps memcpy/memmove/etc. Record confirmed data-transfer conduits for Step 1.2.
-   f. Write the layer's results to the state file: list of `{caller, callee, file, line, type, confidence}`.
-   g. Queue callees for the next layer.
-3. After all layers, compile the complete edge list from all state files.
+3. Resolve each callee's `file` path relative to PROJECT_DIR to get the source location.
+4. Trust the edge confidence from callgraph.json: all edges (direct, indirect at any confidence level) are accepted as-is. Phase 3 reviewers will independently verify edges with medium/low confidence for confirmed findings.
 
 ### Terminal Functions (do not expand past these)
 

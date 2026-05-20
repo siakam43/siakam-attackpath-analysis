@@ -76,10 +76,10 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
    - If it exists, read it. If the `interfaces` array is empty, warn: "No entry functions found in apis.json. Check SII analysis results." and exit.
    - Ignore the `failures`, `errors`, and `warnings` fields — they are informational only.
 
-4. **Check for callgraph.json.**
+4. **Verify callgraph.json.**
    - Check if `<PROJECT_DIR>/.siakam_out/callgraph.json` exists.
-   - If it exists, set `HAS_CALLGRAPH = true`. (The skill does not generate callgraph.json — it is pre-built by external Siakam framework modules.)
-   - If it does not exist, set `HAS_CALLGRAPH = false`.
+   - If it does NOT exist, tell the user: "callgraph.json not found at `<PROJECT_DIR>/.siakam_out/callgraph.json`. The Siakam framework must generate this file before SAA analysis." and abort.
+   - If it exists, the file is ready for use. (callgraph.json is pre-built by external Siakam framework modules — this skill does not generate it.)
 
 5. **Determine entry list and file naming.**
    - Extract all entries from `apis.json` `interfaces` array.
@@ -134,7 +134,7 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
    - Determine `CG_HELPER_PATH`: the absolute path to `tools/cg_helper.py`. This file is located at `<skill_root>/tools/cg_helper.py` where `<skill_root>` is the directory containing this SKILL.md file.
    - For each entry in the task tracker that is NOT marked `[x]`:
      - Dispatch a sub-agent with the prompt from `step1_attack_path.md`. Set its timeout to `PHASE1_TIMEOUT_MS` ms.
-     - The sub-agent receives: `ENTRY_NAME`, `ENTRY_FILE`, `ENTRY_LINE`, `PROJECT_DIR`, `HAS_CALLGRAPH`, `MAX_CALL_DEPTH`, `MAX_INFECTED_FUNCTIONS`, `EXCLUSIONS`, and `CG_HELPER_PATH`.
+     - The sub-agent receives: `ENTRY_NAME`, `ENTRY_FILE`, `ENTRY_LINE`, `PROJECT_DIR`, `MAX_CALL_DEPTH`, `MAX_INFECTED_FUNCTIONS`, `EXCLUSIONS`, and `CG_HELPER_PATH`.
      - The sub-agent writes its output to `<PROJECT_DIR>/.siakam_out/SAA/attack_path/<uid>_attack_path.md`.
    - Launched sub-agents run concurrently.
 
@@ -333,8 +333,7 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 
 ### Phase 5: Cleanup
 
-1. Remove the temporary directory: `<PROJECT_DIR>/.siakam_out/SAA/.step1_state/` (if it exists).
-2. Keep `tasks.md` for audit. (Delete it only if the user has configured automatic cleanup.)
+1. Keep `tasks.md` for audit. (Delete it only if the user has configured automatic cleanup.)
 
 ---
 
