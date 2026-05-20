@@ -193,7 +193,7 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 
 6. **Gate check.**
    - If ALL Phase 2 tasks failed, skip to Phase 4 with whatever data exists.
-   - Otherwise, populate the Phase 3 section of tasks.md with all findings from all successful and partial `<uid>_vuls.md` files. Do NOT create Phase 3 tasks for findings listed in `## Unanalyzed Functions` sections.
+   - Otherwise, populate the Phase 3 section of tasks.md with all findings from all successful and partial `<uid>_vuls.md` files.
 
 ### Phase 3: False-Positive Elimination
 
@@ -237,13 +237,8 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 ### Phase 4: Consolidation
 
 1. **Scan all `<uid>_vuls.md` files.**
-   - **Deduplication check**: Scan for duplicate finding numbers within each `_vuls.md` file and across files. If `Finding-XXX` appears more than once in the same file, keep only the first occurrence (the one closest to the file top) and discard later duplicates. If duplicates differ in their Review verdict, use the first occurrence's verdict. Count discarded duplicates separately — report them in a `## Data Integrity Notes` section of Vul_report.md:
-     ```markdown
-     ## Data Integrity Notes
-     | File | Finding | Issue | Resolution |
-     |------|---------|-------|------------|
-     | driver_ioctl_vuls.md | Finding-005 | Duplicate finding (2 occurrences) | Kept first occurrence (FALSE_POSITIVE); discarded duplicate (CONFIRMED) |
-     ```
+   - **Duplicate number check** (mechanical integrity): Scan for duplicate `Finding-XXX` numbers within each file. The same finding number should never appear twice within a file — if it does, it indicates a write collision or merge error. Keep the first occurrence and discard later duplicates. Report any discarded duplicates in `## Data Integrity Notes`.
+   - **Reviewer merge verification**: For each reviewer completion report that declared `MERGES:`, verify the merged file reflects the merge: the merged-into finding remains, the merged-from finding is removed. Number gaps from reviewer merges are expected — note them in `## Data Integrity Notes` as informational, not errors.
    - Extract every finding with `Result: CONFIRMED`.
    - Also identify findings where `Reviewed` is still `no` (reviewer failed, verdict never applied). Flag these as **unreviewed** — do NOT include them in confirmed vulnerabilities. List them in the `## Unreviewed Findings` section of Vul_report.md.
    - Count total unreviewed findings and report them in the Summary table.
@@ -298,10 +293,11 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 
 <!-- SECTION: integrity -->
 ## Data Integrity Notes
-(Only include if duplicates or other data issues were found and resolved)
+(Only include if duplicate numbers or reviewer merges were found)
 | File | Finding | Issue | Resolution |
 |------|---------|-------|------------|
-| <file> | <finding> | <issue description> | <resolution> |
+| <file> | Finding-XXX | Duplicate finding number | Kept first occurrence; discarded duplicate |
+| <file> | Finding-XXX | Reviewer merged Finding-YYY into Finding-XXX | Number gap at Finding-YYY (expected) |
 <!-- /SECTION: integrity -->
 
 <!-- SECTION: vulns -->
