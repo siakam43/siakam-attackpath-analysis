@@ -25,7 +25,7 @@ Analyze C codebases for attack paths and security vulnerabilities.
 | `PHASE1_TIMEOUT_MS` | 600000 | Max time (ms) for one Phase 1 sub-agent (call graph + data flow) |
 | `PHASE2_TIMEOUT_BASE_MS` | 300000 | Base time (ms) for Phase 2 sub-agent setup, file I/O, and report writing |
 | `PHASE2_TIMEOUT_PER_FUNC_MS` | 60000 | Additional time (ms) per infected function in the entry |
-| `PHASE3_TIMEOUT_MS` | 240000 | Max time (ms) for one Phase 3 reviewer (single finding review) |
+| `PHASE3_TIMEOUT_MS` | 600000 | Max time (ms) for one Phase 3 reviewer (all findings for one entry) |
 
 A Phase 2 sub-agent's timeout = `PHASE2_TIMEOUT_BASE_MS + (num_infected_functions * PHASE2_TIMEOUT_PER_FUNC_MS)`.
 To change a parameter, edit the value in this file. `MAX_CALL_DEPTH` and `MAX_INFECTED_FUNCTIONS` must also be updated in `steps/step1_attack_path.md`.
@@ -200,35 +200,28 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 1. **Read the step document.**
    - Read `steps/step3_false_positive.md` in full. Follow its instructions exactly.
 
-2. **Assign reviewers.**
-   - For each finding across all `<uid>_vuls.md` files, assign it to exactly one reviewer sub-agent.
-   - **Constraint**: No sub-agent may review a finding it discovered. Track which sub-agent discovered each finding (recorded in the finding's metadata). Assign reviewers such that discoverer != reviewer.
-   - Update tasks.md Phase 3 section with the assignments.
+2. **Assign one reviewer per entry.**
+   - For each entry with Phase 2 findings (successful or partial), assign one reviewer sub-agent.
+   - **Constraint**: The reviewer must be different from the Phase 2 sub-agent that analyzed this entry. For example, with entries A, B, C: the Phase 3 reviewer for A could be the sub-agent that handled Phase 2 for B.
+   - Each reviewer receives ALL findings from one `<uid>_vuls.md` file, plus the full attack path context for each finding.
+   - Update tasks.md Phase 3 section with one task per entry.
 
 3. **Launch parallel sub-agents (timeout: PHASE3_TIMEOUT_MS ms each).**
-   - For each finding, dispatch a reviewer sub-agent with the prompt from `step3_false_positive.md`. Set its timeout to `PHASE3_TIMEOUT_MS` ms.
+   - For each entry, dispatch a reviewer sub-agent with the prompt from `step3_false_positive.md`. Set its timeout to `PHASE3_TIMEOUT_MS` ms.
    - The reviewer receives:
-     - The individual finding context (the `<!-- SECTION: finding -->` block from the vuln report).
-     - The attack path chain with edge annotations: the sequence of functions from entry to vulnerability function, with file:line and edge type/confidence between hops (e.g., `entry @ src/a.c:10 → [direct] mid @ src/b.c:20 → [indirect, confidence: high] vuln @ src/c.c:30`). No Step 1/2 analysis — bare chain + edge metadata only.
+     - The full `<uid>_vuls.md` file (all findings for that entry).
+     - The full `<uid>_attack_path.md` file (all attack paths, the Function Index, and per-function labels from Phase 1).
      - `PROJECT_DIR` and `EXCLUSIONS` for locating source files.
-   - The reviewer reads source code themselves using Read tools, starting with the vulnerability function and immediate caller. They may read any function in the attack path chain for context (up to the entry). Do NOT send pre-read source code — let the reviewer read fresh.
-   - The reviewer returns: CONFIRMED / FALSE_POSITIVE (with reason) / DISPUTED (with reason).
-   - Reviewers do NOT write files. They return their verdict to you (the main agent).
+   - The reviewer reads source code themselves using Read tools to independently verify the attack path chain, data flow, and protective mechanisms for each finding.
+   - The reviewer writes the updated `<uid>_vuls.md` directly: filling in each finding's `### Review (Step 3)` table and updating the `## Summary` table.
+   - The reviewer returns a brief completion report listing the verdict for each finding.
 
-4. **Collect and apply reviews.**
-   - Each `_vuls.md` file may have findings from multiple reviewers. Since reviewers return verdicts asynchronously, apply each verdict one at a time:
-     1. **Re-read** the current `<uid>_vuls.md` file to get its exact state including any prior review updates already applied.
-     2. Locate the matching `<!-- SECTION: finding -->` block by finding number (`Finding-XXX`).
-     3. Verify the finding block has `Reviewed` → `no` (not yet reviewed). If already reviewed, skip — this is a duplicate verdict.
-     4. Update the `### Review (Step 3)` block. **Critical: when using the Edit tool, the old_string MUST include the finding's header line** (e.g., `## Finding-001: Buffer Overflow in WRITE ioctl...`) to guarantee the match is unique. Never use a generic string like `Reviewed | *to be filled in Step 3*` alone — it matches all unreviewed findings and will create duplicates.
-        - `Reviewed` → yes
-        - `Result` → CONFIRMED / FALSE_POSITIVE
-        - `Reviewer` → sub-agent identifier
-        - `Revised Confidence` → only if the reviewer changed the confidence score
-        - `Exclusion Reason` → only if FALSE_POSITIVE
-     5. Update the per-file `## Summary` table with the new confirmed/false-positive counts.
-     6. Write the file and mark the task `[x]` in tasks.md.
-   - This read-verify-update-write cycle prevents stale overwrites when multiple verdicts target the same file.
+4. **Verify and track.**
+   - For each completing reviewer, read the updated `<uid>_vuls.md` and verify:
+     - Every finding's `Reviewed` field is now `yes` (not `*to be filled in Step 3*`).
+     - No duplicate or missing review blocks.
+   - If verification passes, mark the task `[x]` in tasks.md.
+   - If verification fails (some findings left unreviewed, malformed updates), mark `PARTIAL` and note which findings need re-review.
 
 5. **Resolve DISPUTED findings.**
    - For any finding where the reviewer returned DISPUTED, you (the main agent) make the final call.
@@ -236,10 +229,10 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
    - Update the finding's Review block accordingly.
 
 6. **Retry failures.**
-   - For any reviewer that failed, classify the failure (timeout, malformed verdict, error).
-   - Timeout failures: retry once with a different sub-agent and `PHASE3_TIMEOUT_MS * 1.5` ms extended timeout.
-   - Other failures: retry once with a different sub-agent using the same `PHASE3_TIMEOUT_MS` ms.
-   - If still failing, leave the finding as unreviewed (`Reviewed` → no) and record it in the failures manifest with the failure reason.
+   - For any reviewer that failed (timeout, malformed output, error), classify and retry once with a different sub-agent.
+   - Timeout failures: retry with `PHASE3_TIMEOUT_MS * 1.5` ms extended timeout.
+   - Other failures: retry with the same `PHASE3_TIMEOUT_MS` ms.
+   - If the retry also fails, leave all findings in that entry as unreviewed (`Reviewed` → no) and record it in the failures manifest.
 
 ### Phase 4: Consolidation
 

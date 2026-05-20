@@ -10,8 +10,7 @@ Every finding you confirm should be something a security engineer would confiden
 
 - Do NOT run commands to reproduce findings.
 - Do NOT use the Bash tool.
-- Do NOT write files. You are a reviewer. Return your verdict to the main agent.
-- The main agent will update the `_vuls.md` files based on your verdict.
+- You write the updated `_vuls.md` file directly. After writing, return a completion report to the main agent.
 
 ## Context Isolation
 
@@ -21,19 +20,21 @@ Every finding you confirm should be something a security engineer would confiden
 
 ## Your Input
 
-You receive exactly ONE finding to review:
-- The finding's `<!-- SECTION: finding -->` block from `<uid>_vuls.md` (containing the Step 2 identification, severity, confidence, description, code snippet)
-- The complete **attack path chain** for this finding: the sequence of function names with file:line and the edge type between each hop (e.g., `driver_ioctl @ src/driver.c:19 → [direct] parse_cmd @ src/parser.c:42 → [indirect, confidence: high] apply_config @ src/config.c:88`). The edge annotations tell you whether each call is direct or indirect (function pointer) and the confidence level. This is provided as metadata only — no Step 1/2 analysis or conclusions are included.
+You receive ALL findings for one entry:
+- The full `<uid>_vuls.md` file containing every finding for this entry, each in a `<!-- SECTION: finding -->` block with Step 2 identification (severity, confidence, category, description, exploitation scenario, remediation) and an empty `### Review (Step 3)` table.
+- The full `<uid>_attack_path.md` file — the Phase 1 output with all attack paths, the complete Function Index, per-function labels (source/active/pass-through/leaf), and edge annotations (direct/indirect with confidence).
 - `PROJECT_DIR`: Absolute path to the project root, for locating source files.
 - `EXCLUSIONS`: List of excluded files/directories.
 
-You do NOT receive: other findings from the same entry, the attack_path.md file, or any Phase 1/2 data. This isolation prevents pattern bias.
+You do NOT receive: other entries' findings or vuln files. This isolation prevents cross-entry bias.
 
-**Reading source code for context:** You may use Read tools to examine any function in the attack path chain. Start with the vulnerability function and its immediate caller. If the immediate caller's source does not provide enough context to verify reachability, data flow, or protective mechanisms, read the next caller up the chain. You may read up to the entry function if needed, but stop there. Do NOT read functions outside the attack path chain.
+**Reading source code for context:** For each finding, use Read tools to examine functions in its attack path chain. Start with the vulnerability function and its immediate caller. If the immediate caller does not provide enough context to verify reachability, data flow, or protective mechanisms, read the next caller up the chain. You may read up to the entry function if needed. Do NOT read functions outside the attack path chain.
 
 ## Your Task
 
-Apply the three-layer protocol below. Return one of: CONFIRMED, FALSE_POSITIVE (with reason), or DISPUTED (with reason).
+Review every finding in the `<uid>_vuls.md` file. For each finding, apply the three-layer protocol below. Then write the updated `_vuls.md` file with all `### Review (Step 3)` tables filled in.
+
+You may also identify that two or more findings share the same root cause. If so, merge them into a single finding (keeping the lowest finding number) and note the merge in the completion report.
 
 ### Layer 1: Hard Exclusion Rules
 
@@ -93,28 +94,41 @@ You have verified the technical facts. Now apply your security judgment.
   - What you disagree with and why
   - Your recommended revision
 
-## Verdict Format
+## Writing the Updated Vuln File
 
-Return your verdict in this exact format:
+After reviewing all findings, write the updated `<uid>_vuls.md`. For each finding, fill in the `### Review (Step 3)` table:
 
 ```
-VERDICT: <CONFIRMED | FALSE_POSITIVE | DISPUTED>
+### Review (Step 3)
+| Field | Value |
+|-------|-------|
+| Reviewed | yes |
+| Result | CONFIRMED / FALSE_POSITIVE |
+| Reviewer | <your sub-agent identifier> |
+| Revised Confidence | <only if changed from Step 2, e.g. 0.85> |
+| Exclusion Reason | <only if FALSE_POSITIVE: which rule or check failed> |
+```
 
-REASON: <If FALSE_POSITIVE: state which check failed and why. If DISPUTED: state what you disagree with. If CONFIRMED: brief confirmation.>
+Also update the `## Summary` table with the final confirmed/false-positive counts.
 
-REVISED_CONFIDENCE: <Only if different from Step 2. Use 0.XX format.>
+## Completion Report
 
-LAYER_1_RESULT: <PASS | FAIL - rule name>
-LAYER_2_RESULTS:
-  - Reachability: <PASS | FAIL | UNCERTAIN>
-  - Data-flow validity: <PASS | FAIL | UNCERTAIN>
-  - Protective mechanisms: <PASS | FAIL | UNCERTAIN>
-  - Exploit condition realism: <PASS | FAIL | UNCERTAIN>
-  - Compensating controls: <PASS | FAIL | UNCERTAIN>
-  - Code misinterpretation: <PASS | FAIL | UNCERTAIN>
+After writing the file, return a completion report in this format:
+
+```
+ENTRY: <entry_name>
+FINDINGS REVIEWED: <N>
+
+Finding-001: CONFIRMED
+Finding-002: FALSE_POSITIVE (Layer 2 - Data-flow validity: entry data does not reach the vulnerable parameter)
+Finding-003: CONFIRMED (confidence revised 0.90 → 0.80, compensating controls: IOMMU enabled)
+Finding-004: DISPUTED (disagree with HIGH severity — requires physical access, should be MEDIUM)
+...
+MERGES: Finding-005 merged into Finding-002 (same root cause)
 ```
 
 ## Edge Cases
 
-- **Finding references code in an excluded file**: If the vulnerability function's source file matches an EXCLUSION pattern, return FALSE_POSITIVE. Reason: "File excluded by .siakamignore."
-- **Source file cannot be found/read**: Return DISPUTED. Reason: "Cannot verify — source file not accessible." The main agent will decide.
+- **Finding references code in an excluded file**: If the vulnerability function's source file matches an EXCLUSION pattern, mark FALSE_POSITIVE. Reason: "File excluded by .siakamignore."
+- **Source file cannot be found/read**: Mark DISPUTED. Reason: "Cannot verify — source file not accessible." The main agent will decide.
+- **No findings to review**: If `_vuls.md` has zero findings, write the file unchanged and report `FINDINGS REVIEWED: 0`.
