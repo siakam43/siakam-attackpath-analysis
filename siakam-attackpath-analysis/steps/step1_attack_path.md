@@ -34,33 +34,14 @@ You receive:
 
 For the given entry function, construct a pruned call graph and identify all attack paths. Write the result to `<PROJECT_DIR>/.siakam_out/SAA/attack_path/<uid>_attack_path.md`.
 
-## Step 1.0: Custom Data-Transfer Function Recognition
-
-Some projects define their own data-copy wrappers around memcpy/memmove (e.g., `my_memcpy`, `dma_buffer_copy`, `shmem_xfer`). These propagate attacker data through their destination buffers, just like standard memcpy. Identifying them is critical for correct data-flow tracing in Step 1.2.
-
-**Do NOT pre-scan all source files.** Instead, recognize data-transfer functions inline during Step 1.1's BFS expansion, when you encounter each callee that is NOT in the terminal list:
-
-1. Check the callee's **name** against these patterns:
-   - **Custom memory copy**: name contains `copy`, `mem`, `move`, `transfer`
-   - **Hardware data read**: `mmio_read*`, `dma_read*`, `fifo_get*`, `ioread*`
-   - **Serialization**: `parse_*`, `pack_*`, `marshal_*`, `unmarshal_*`, `deserialize_*`
-   - **IPC/shared-memory**: `ipc_send*`, `shmem_write*`, `mbox_*`
-2. If the name matches, **read its function body** (using Read tool at the resolved source location).
-3. If the body contains a call to `memcpy`, `memmove`, `strcpy`, `strncpy`, `memcpy_toio`, `__copy_from_user`, or similar raw memory operations → mark the function as a **data-transfer conduit**.
-4. Record the function name. The destination-buffer argument of a data-transfer conduit propagates taint — downstream functions that read from that buffer are infected (see Step 1.2 Rule 5).
-5. Whether or not the function is a data-transfer conduit, **continue BFS expansion** past it normally — it is NOT a terminal function.
-
-This approach limits analysis to functions that actually appear on the call graph, avoiding an O(all-files) pre-scan.
-
-## Step 1.1: Build the Call Graph
+## Step 1.0: Build the Call Graph
 
 1. Use `cg_helper.py` to load the graph from `<PROJECT_DIR>/.siakam_out/callgraph.json`.
 2. BFS from the entry function:
    - Query callees: `python3 <CG_HELPER_PATH> <FUNC> callee --callgraph-path <PROJECT_DIR>/.siakam_out/callgraph.json`
    - For each callee:
      - If it is a standard library/kernel function (see terminal list below), mark as leaf and stop expansion.
-     - If it is NOT in the terminal list, apply the data-transfer recognition check from Step 1.0 before adding it to the BFS queue. Record any confirmed data-transfer conduits for Step 1.2.
-     - If it is a non-terminal function, add it to the queue for the next level.
+     - Otherwise, add it to the BFS queue for the next level.
    - Stop when depth exceeds MAX_CALL_DEPTH or infected function count exceeds MAX_INFECTED_FUNCTIONS.
 3. Resolve each callee's `file` path relative to PROJECT_DIR to get the source location.
 
@@ -82,7 +63,6 @@ This approach limits analysis to functions that actually appear on the call grap
 
 Also terminate on any function whose name starts with `__builtin_`, `__atomic_`, or `__sync_`.
 
-**Custom wrappers around terminal functions**: If the codebase defines a wrapper around a terminal function (e.g., `my_memcpy()`, `dma_buf_alloc()`), the wrapper is NOT automatically terminal — it must be identified via the Step 1.0 data-transfer recognition check. If the wrapper only calls the terminal function (no further callees), BFS still stops there — but the wrapper is recorded as a data-transfer conduit for Step 1.2 data-flow tracing.
 
 ### Cycle Detection:
 
@@ -91,6 +71,23 @@ Maintain a visited set per path. If a function appears that is already in the cu
 ### Header File Entries:
 
 If the entry function is in a `.h` file, analyze it normally. However, do not deeply expand function-like macros — treat `#define` macros that contain control flow as opaque.
+
+## Step 1.1: Custom Data-Transfer Function Recognition
+
+Some projects define their own data-copy wrappers around memcpy/memmove (e.g., `my_memcpy`, `dma_buffer_copy`, `shmem_xfer`). These propagate attacker data through their destination buffers, just like standard memcpy. Identifying them is critical for correct data-flow tracing in Step 1.2.
+
+**After Step 1.0's BFS completes**, scan every non-terminal function in the constructed call graph for data-transfer conduit patterns:
+
+1. Check the function's **name** against these patterns:
+   - **Custom memory copy**: name contains `copy`, `mem`, `move`, `transfer`
+   - **Hardware data read**: `mmio_read*`, `dma_read*`, `fifo_get*`, `ioread*`
+   - **Serialization**: `parse_*`, `pack_*`, `marshal_*`, `unmarshal_*`, `deserialize_*`
+   - **IPC/shared-memory**: `ipc_send*`, `shmem_write*`, `mbox_*`
+2. If the name matches, **read its function body** (using Read tool at the resolved source location).
+3. If the body contains a call to `memcpy`, `memmove`, `strcpy`, `strncpy`, `memcpy_toio`, `__copy_from_user`, or similar raw memory operations → mark the function as a **data-transfer conduit**.
+4. Record the function name. The destination-buffer argument of a data-transfer conduit propagates taint — downstream functions that read from that buffer are infected (see Step 1.2 Rule 5).
+
+This approach limits analysis to functions that actually appear on the call graph, avoiding an O(all-files) pre-scan.
 
 ## Step 1.2: Data Flow Tracing
 
@@ -108,7 +105,7 @@ For each function F that has caller C:
 2. **Local assignment**: C assigns an infected parameter/expression to a local variable, then passes that variable to F → F is infected.
 3. **Struct field propagation**: C writes an infected value to a struct field, passes the struct to F, and F reads that field → F is infected.
 4. **Pointer alias propagation**: C has a pointer P pointing to infected data. C computes `Q = P + offset` or `Q = (cast_type)P` and passes Q to F → F is infected.
-5. **Memory copy propagation**: C copies infected data via memcpy/strcpy or a custom data-transfer function (from Step 1.0), then passes the destination buffer to F → F is infected.
+5. **Memory copy propagation**: C copies infected data via memcpy/strcpy or a custom data-transfer function (from Step 1.1), then passes the destination buffer to F → F is infected.
 
 ### Termination
 

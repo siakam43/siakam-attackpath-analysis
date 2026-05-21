@@ -48,7 +48,7 @@ Scan the function body. For each of the 9 methods below, determine if the method
 
 | Method | Applicability Check |
 |--------|---------------------|
-| Source-to-sink tracking | Applicable if the function (a) calls any terminal function with a tainted argument — including memory ops (`memcpy`, `strcpy`, `sprintf`, `copy_to_user`), allocators (`kmalloc`, `kzalloc`, `vmalloc`), mappers (`ioremap`), deallocators (`kfree`), or I/O (`writel`, `mmio_write`); (b) passes tainted data as an argument to any callee; or (c) is marked `active` in the Function Index and receives tainted data but does not call terminal functions or pass tainted data to callees — verify in Step 2.2c Method 1 whether it actually performs validation before creating a finding |
+| Source-to-sink tracking | Applicable if the function (a) calls any terminal function with a tainted argument; (b) passes tainted data as an argument to any callee; or (c) receives tainted data, does not call terminal functions or pass tainted data to callees, but does consume the tainted data within its body — see Step 2.2c Method 1 for the full definition. If the function ignores the tainted data entirely, Method 1 is N/A — there is no sink. |
 | Bounds-check completeness | Applicable if the function uses array indexing, pointer arithmetic, or calls memcpy/strcpy with a variable length argument |
 | Integer safety | Applicable if the function performs arithmetic on variables that could be tainted, especially before memory operations or size calculations |
 | Lifetime analysis | Applicable if the function calls malloc/free/kmalloc/kfree or uses dynamically allocated memory |
@@ -63,17 +63,45 @@ Scan the function body. For each of the 9 methods below, determine if the method
 For each method marked APPLICABLE, perform the analysis:
 
 **1. Source-to-Sink Tracking**
-- **Applicability-check (c) — `active` functions with no terminal calls or tainted callee arguments**: These functions receive attacker data but forward it nowhere. The automatic "did nothing to validate" rule is removed — a function whose purpose IS validation (inspect, reject on failure) is not a vulnerability. Read the function body and distinguish:
-  - **Validation performed → PASS**: The function inspects the tainted data (bounds comparison, range check, type check, NULL check, integrity verification, format/size validation) and returns an error code or takes corrective action based on that inspection. A function that validates attacker data and rejects bad input is the security mechanism, not a finding. Note: "Function performs validation: <brief description>."
-  - **No meaningful action → FAIL (Category A)**: The function does nothing with the tainted data beyond receiving it — e.g., returns success (`return 0;`) without inspecting parameters, assigns tainted data to an unused local, or has a trivial body with no checks. The function accepted attacker-controlled data and did nothing to validate, sanitize, or reject it. Describe what data was accepted without inspection.
-- Identify taint sources: entry parameters that reach this function.
-- Identify dangerous sinks — these are broken into four tiers:
+
+### Step 1: Identify Taint Sources
+Identify which entry parameters reach this function.
+
+### Step 2: Identify Sinks
+Determine sinks based on how the function handles the tainted data:
+
+**(a) Terminal-function call with tainted argument:**
+The sink is the terminal-function call itself. Terminal functions include:
   - **Memory ops**: `memcpy`, `memmove`, `memset`, `strcpy`, `strncpy`, `strcat`, `strncat`, `sprintf`, `snprintf`, `sscanf`, `copy_from_user`, `copy_to_user`, `__copy_from_user`, `__copy_to_user`
   - **Allocators / deallocators**: `kmalloc`, `kzalloc`, `kcalloc`, `vmalloc`, `vfree`, `kfree`, `devm_kzalloc`, `devm_kmalloc`
   - **Privilege mappers**: `ioremap`, `ioremap_nocache`, `ioremap_wc`, `devm_ioremap`, `devm_ioremap_resource`
   - **Hardware I/O**: `writel`, `writew`, `writeb`, `writeq`, `__raw_writel`, `iowrite8`, `iowrite16`, `iowrite32`, `mmio_write`, `outb`, `outw`, `outl`
-- For each source-sink pair, trace whether the tainted value can reach the sink without sanitization.
-- Record as PASS (no issue), FAIL (vulnerability found), or N/A.
+
+**(b) Tainted data passed to callee:**
+The sink is the callee invocation. Record the callee name and the data-flow mechanism (direct pass, local assignment, struct field, pointer alias, memory copy — per Step 1.2 rules).
+
+**(c) Tainted data consumed locally (no terminal call, no callee pass):**
+The sink is the consuming operation itself. These include:
+  - Pointer dereference (`*p`, `p->field`)
+  - Array indexing (`arr[idx]`)
+  - Store to global/static variable
+  - Write to shared memory or output buffer
+  - Control-flow decision on a security-sensitive path
+If the function does NOT use the tainted data in any such way (e.g., returns a hardcoded value without reading parameters), there is no sink → N/A.
+
+### Step 3: Check Validation
+
+**For (a) and (c) — sink is in this function:**
+Trace BACKWARD up the attack path from this function to the entry. Read each caller's source in the chain. Did any function validate the tainted value BEFORE it propagated to this sink?
+Validation checks include: bounds comparison, range check, type check, NULL check, integrity verification, format/size check, magic number, capability check.
+  - Validation found anywhere in the chain → PASS. Note where validation occurred (function + file:line).
+  - No validation anywhere in the chain → FAIL (Category A).
+
+**For (b) — sink is downstream:**
+This is DATA-FLOW TRACKING ONLY. Do NOT create a finding. The callee's own Method 1 analysis will evaluate whether the sink is reached without validation.
+Record as PASS (tracking).
+
+Record each condition as PASS, FAIL, or N/A.
 
 **2. Bounds-Check Completeness**
 - For each memcpy(dst, src, len), array[idx], ptr[offset]: trace backward to find where len/idx/offset was last set.
