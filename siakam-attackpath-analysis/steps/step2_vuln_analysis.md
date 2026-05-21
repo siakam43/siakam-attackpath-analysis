@@ -9,6 +9,8 @@
 | Infected function | A function whose parameters trace back to entry's external input |
 | Finding | A potential vulnerability discovered in this phase |
 
+> **Tool constraint:** All vulnerability analysis must be done by reading source code with Read/Grep/Glob tools and applying LLM reasoning. Do NOT write or execute scripts to parse code, match patterns, or automate analysis. All 9 review methods must be performed manually by reasoning over the source code.
+
 ## Your Input
 
 You receive:

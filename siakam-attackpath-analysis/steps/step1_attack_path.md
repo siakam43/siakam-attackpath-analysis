@@ -16,6 +16,8 @@
 | Attack path | A root-to-leaf chain of infected functions |
 | Pruned attack graph | Call graph with only infected nodes and their edges |
 
+> **Tool constraint:** All source code analysis must be done using Read/Grep/Glob tools. Do NOT write or execute scripts to parse code or automate reasoning. The ONLY executable permitted is `CG_HELPER_PATH` for callgraph queries. Always invoke it with `--callgraph-path <PROJECT_DIR>/.siakam_out/callgraph.json`.
+
 ## Your Input
 
 You receive:
