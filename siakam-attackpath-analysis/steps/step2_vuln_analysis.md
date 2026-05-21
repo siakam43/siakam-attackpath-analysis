@@ -64,10 +64,10 @@ For each method marked APPLICABLE, perform the analysis:
 
 **1. Source-to-Sink Tracking**
 
-### Step 1: Identify Taint Sources
+#### Identify Taint Sources
 Identify which entry parameters reach this function.
 
-### Step 2: Identify Sinks
+#### Identify Sinks
 Determine sinks based on how the function handles the tainted data:
 
 **(a) Terminal-function call with tainted argument:**
@@ -89,7 +89,7 @@ The sink is the consuming operation itself. These include:
   - Control-flow decision on a security-sensitive path
 If the function does NOT use the tainted data in any such way (e.g., returns a hardcoded value without reading parameters), there is no sink → N/A.
 
-### Step 3: Check Validation
+#### Check Validation
 
 **For (a) and (c) — sink is in this function:**
 Trace BACKWARD up the attack path from this function to the entry. Read each caller's source in the chain. Did any function validate the tainted value BEFORE it propagated to this sink?
