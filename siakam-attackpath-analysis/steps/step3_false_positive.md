@@ -14,7 +14,7 @@ Every finding you confirm should be something a security engineer would confiden
 
 ## Context Isolation
 
-> Use ONLY the input files specified in this document. Do not rely on conclusions or judgments from previous analysis phases. Re-examine from first principles. You are seeing this finding for the first time.
+> The `<uid>_vuls.md` and `<uid>_attack_path.md` files are your authorized inputs — they give you the findings to review and the attack path context. Use these as your starting point. Independently verify reachability, data flow, and protective mechanisms by reading source code (per Layer 2 checks). Do not rubber-stamp the Step 2 description — confirm it against the code. Do not import assumptions from other entries or sessions.
 >
 > **Tool constraint:** All review work must be done by reading source code with Read tools and applying LLM reasoning. Do NOT write or execute scripts.
 

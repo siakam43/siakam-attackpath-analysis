@@ -11,7 +11,7 @@
 
 ## Context Isolation
 
-> Use ONLY the input files specified in this document. Do not rely on conclusions or judgments from any previous analysis. Analyze each function from its source code.
+> The `<uid>_attack_path.md` file is your authorized input — its Function Index tells you which functions to analyze and its Path tables describe how data flows. Use this as your starting point. Verify the vulnerability claims (reachability, data flow, bounds, protections) by reading source code directly; do not assume the attack path's annotations are correct without checking. Do not import assumptions from other entries or sessions.
 >
 > **Tool constraint:** All vulnerability analysis must be done by reading source code with Read/Grep/Glob tools and applying LLM reasoning. Do NOT write or execute scripts to parse code, match patterns, or automate analysis. All 9 review methods must be performed manually by reasoning over the source code.
 
