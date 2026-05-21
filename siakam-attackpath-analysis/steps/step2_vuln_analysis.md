@@ -299,10 +299,10 @@ The `### Review (Step 3)` fields MUST be left as shown — they will be filled b
 <Detailed description of the vulnerability.>
 <What is the root cause? What is the causal chain if composite?>
 <Include the key code lines as a markdown code block:>
-```c
+~~~c
 // <file>:<line_start>-<line_end>
 <relevant code snippet>
-```
+~~~
 
 **Exploitation Scenario**:
 <How would an attacker exploit this? What capabilities do they need? What is the impact?>
