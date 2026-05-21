@@ -109,8 +109,6 @@ For each function F that has caller C:
 3. **Struct field propagation**: C writes an infected value to a struct field, passes the struct to F, and F reads that field → F is infected.
 4. **Pointer alias propagation**: C has a pointer P pointing to infected data. C computes `Q = P + offset` or `Q = (cast_type)P` and passes Q to F → F is infected.
 5. **Memory copy propagation**: C copies infected data via memcpy/strcpy or a custom data-transfer function (from Step 1.0), then passes the destination buffer to F → F is infected.
-6. **Control-flow influence**: C uses an infected parameter in a branch condition (`if`, `switch`), and F is called within the controlled branch → F is infected (indirect influence).
-7. **Comparison-only exclusion**: C uses an infected parameter ONLY in a comparison (`if (arg == CONSTANT)`) and the comparison result does NOT determine whether F is called → F is NOT infected.
 
 ### Termination
 
