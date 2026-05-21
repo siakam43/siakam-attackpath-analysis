@@ -52,7 +52,7 @@ Scan the function body. For each of the 9 methods below, determine if the method
 
 | Method | Applicability Check |
 |--------|---------------------|
-| Source-to-sink tracking | Applicable if the function (a) calls any terminal function with a tainted argument — including memory ops (`memcpy`, `strcpy`, `sprintf`, `copy_to_user`), allocators (`kmalloc`, `kzalloc`, `vmalloc`), mappers (`ioremap`), deallocators (`kfree`), or I/O (`writel`, `mmio_write`); (b) passes tainted data as an argument to any callee; or (c) is marked `active` or `pass-through` in the Function Index and receives tainted data regardless of what it does with it |
+| Source-to-sink tracking | Applicable if the function (a) calls any terminal function with a tainted argument — including memory ops (`memcpy`, `strcpy`, `sprintf`, `copy_to_user`), allocators (`kmalloc`, `kzalloc`, `vmalloc`), mappers (`ioremap`), deallocators (`kfree`), or I/O (`writel`, `mmio_write`); (b) passes tainted data as an argument to any callee; or (c) is marked `active` in the Function Index and receives tainted data but does not call terminal functions or pass tainted data to callees — verify in Step 2.2c Method 1 whether it actually performs validation before creating a finding |
 | Bounds-check completeness | Applicable if the function uses array indexing, pointer arithmetic, or calls memcpy/strcpy with a variable length argument |
 | Integer safety | Applicable if the function performs arithmetic on variables that could be tainted, especially before memory operations or size calculations |
 | Lifetime analysis | Applicable if the function calls malloc/free/kmalloc/kfree or uses dynamically allocated memory |
@@ -67,7 +67,9 @@ Scan the function body. For each of the 9 methods below, determine if the method
 For each method marked APPLICABLE, perform the analysis:
 
 **1. Source-to-Sink Tracking**
-- This method is applicability-check (c): if the function is `active` or `pass-through` and receives tainted data, but does not call any terminal function or pass tainted data to a callee, it is a Category A (Input Validation) finding — the function accepted attacker data and did nothing to validate it.
+- **Applicability-check (c) — `active` functions with no terminal calls or tainted callee arguments**: These functions receive attacker data but forward it nowhere. The automatic "did nothing to validate" rule is removed — a function whose purpose IS validation (inspect, reject on failure) is not a vulnerability. Read the function body and distinguish:
+  - **Validation performed → PASS**: The function inspects the tainted data (bounds comparison, range check, type check, NULL check, integrity verification, format/size validation) and returns an error code or takes corrective action based on that inspection. A function that validates attacker data and rejects bad input is the security mechanism, not a finding. Note: "Function performs validation: <brief description>."
+  - **No meaningful action → FAIL (Category A)**: The function does nothing with the tainted data beyond receiving it — e.g., returns success (`return 0;`) without inspecting parameters, assigns tainted data to an unused local, or has a trivial body with no checks. The function accepted attacker-controlled data and did nothing to validate, sanitize, or reject it. Describe what data was accepted without inspection.
 - Identify taint sources: entry parameters that reach this function.
 - Identify dangerous sinks — these are broken into four tiers:
   - **Memory ops**: `memcpy`, `memmove`, `memset`, `strcpy`, `strncpy`, `strcat`, `strncat`, `sprintf`, `snprintf`, `sscanf`, `copy_from_user`, `copy_to_user`, `__copy_from_user`, `__copy_to_user`
