@@ -109,9 +109,23 @@ For each function F that has caller C:
 
 ### Termination
 
-Data flow terminates when the infected data no longer participates in any function call's argument computation.
+Data flow terminates per-branch, not per-function. When a tainted value reaches a terminal-function call, that specific branch stops — but other branches in the same function continue independently.
 
-Example: if infected data is only used as `printf("value: %d", arg)`, the data does not propagate further — `printf` is a terminal function.
+Example — all branches terminate:
+```c
+void log(struct req *r) {
+    printf("cmd: %d\n", r->cmd);   // only consumer → data flow stops here
+    // r is not passed to any other callee
+}
+```
+
+Counterexample — one branch terminates, one continues:
+```c
+void dispatch(struct req *r) {
+    printf("cmd: %d\n", r->cmd);   // this branch terminates (printf is terminal)
+    handle_cmd(r);                 // this branch continues — handle_cmd is NOT terminal
+}
+```
 
 ### Classification
 
