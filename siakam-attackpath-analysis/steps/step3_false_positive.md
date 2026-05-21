@@ -73,7 +73,7 @@ For each check below, read the source code with fresh eyes. Do NOT rely on the S
 **Decision matrix:**
 - All PASS → Proceed to Layer 3.
 - Any FAIL → Return FALSE_POSITIVE. State which check failed and why.
-- Any UNCERTAIN, rest PASS → Keep the finding but lower confidence by 0.1. Proceed to Layer 3 (if confidence still ≥ 0.7).
+- Any UNCERTAIN, rest PASS → Keep the finding. Proceed to Layer 3.
 
 ### Layer 3: Independent Judgment
 
@@ -85,9 +85,8 @@ You have verified the technical facts. Now apply your security judgment.
 
 **Return your verdict:**
 
-- **CONFIRMED**: The vulnerability is real, reachable, and exploitable (or has clear security impact). Include your confidence (may be revised from Step 2).
+- **CONFIRMED**: The vulnerability is real, reachable, and exploitable (or has clear security impact).
 - **FALSE_POSITIVE**: The vulnerability is not real, not reachable, or not exploitable. Include the specific reason and which Layer 2 check(s) failed.
-If you believe the severity or confidence from Step 2 is inaccurate, adjust via the `Revised Confidence` field in the Review table. Severity and categorization disagreements do not block a CONFIRMED verdict — the finding is still real.
 
 ## Writing the Updated Vuln File
 
@@ -100,7 +99,6 @@ After reviewing all findings, write the updated `<uid>_vuls.md`. For each findin
 | Reviewed | yes |
 | Result | CONFIRMED / FALSE_POSITIVE |
 | Reviewer | <your sub-agent identifier> |
-| Revised Confidence | <only if changed from Step 2, e.g. 0.85> |
 | Exclusion Reason | <only if FALSE_POSITIVE: which rule or check failed> |
 ```
 
@@ -116,7 +114,7 @@ FINDINGS REVIEWED: <N>
 
 Finding-001: CONFIRMED
 Finding-002: FALSE_POSITIVE (Layer 2 - Data-flow validity: entry data does not reach the vulnerable parameter)
-Finding-003: CONFIRMED (confidence revised 0.90 → 0.80, compensating controls: IOMMU enabled)
+Finding-003: CONFIRMED
 ...
 MERGES: Finding-005 merged into Finding-002 (same root cause)
 ```

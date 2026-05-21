@@ -342,7 +342,6 @@ The `### Review (Step 3)` fields MUST be left as shown — they will be filled b
 | Reviewed | *to be filled in Step 3* |
 | Result | *to be filled in Step 3* |
 | Reviewer | *to be filled in Step 3* |
-| Revised Confidence | *to be filled in Step 3* |
 | Exclusion Reason | *to be filled in Step 3* |
 <!-- /SECTION: finding -->
 ```
