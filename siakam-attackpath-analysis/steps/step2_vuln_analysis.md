@@ -98,7 +98,7 @@ Validation checks include: bounds comparison, range check, type check, NULL chec
   - No validation anywhere in the chain → FAIL (Category A).
 
 **For (b) — sink is downstream:**
-This is DATA-FLOW TRACKING ONLY. Do NOT create a finding. The callee's own Method 1 analysis will evaluate whether the sink is reached without validation.
+This is DATA-FLOW TRACKING ONLY. Do NOT create a finding. Do NOT read the callee's source code — the callee is a separate function in your assignment list and will be analyzed independently in its own Method 1 pass. Record the callee name and data-flow mechanism in the checklist Notes and move on.
 Record as PASS (tracking).
 
 Record each condition as PASS, FAIL, or N/A.
