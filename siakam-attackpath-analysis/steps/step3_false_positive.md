@@ -87,10 +87,7 @@ You have verified the technical facts. Now apply your security judgment.
 
 - **CONFIRMED**: The vulnerability is real, reachable, and exploitable (or has clear security impact). Include your confidence (may be revised from Step 2).
 - **FALSE_POSITIVE**: The vulnerability is not real, not reachable, or not exploitable. Include the specific reason and which Layer 2 check(s) failed.
-- **DISPUTED**: You believe there is a vulnerability, but you disagree with Step 2's severity, confidence, categorization, or description. Include:
-  - What you agree with
-  - What you disagree with and why
-  - Your recommended revision
+If you believe the severity or confidence from Step 2 is inaccurate, adjust via the `Revised Confidence` field in the Review table. Severity and categorization disagreements do not block a CONFIRMED verdict — the finding is still real.
 
 ## Writing the Updated Vuln File
 
@@ -120,7 +117,6 @@ FINDINGS REVIEWED: <N>
 Finding-001: CONFIRMED
 Finding-002: FALSE_POSITIVE (Layer 2 - Data-flow validity: entry data does not reach the vulnerable parameter)
 Finding-003: CONFIRMED (confidence revised 0.90 → 0.80, compensating controls: IOMMU enabled)
-Finding-004: DISPUTED (disagree with HIGH severity — requires physical access, should be MEDIUM)
 ...
 MERGES: Finding-005 merged into Finding-002 (same root cause)
 ```
@@ -128,5 +124,5 @@ MERGES: Finding-005 merged into Finding-002 (same root cause)
 ## Edge Cases
 
 - **Finding references code in an excluded file**: If the vulnerability function's source file matches an EXCLUSION pattern, mark FALSE_POSITIVE. Reason: "File excluded by .siakamignore."
-- **Source file cannot be found/read**: Mark DISPUTED. Reason: "Cannot verify — source file not accessible." The main agent will decide.
+- **Source file cannot be found/read**: Mark FALSE_POSITIVE. Reason: "Source file not accessible — cannot verify."
 - **No findings to review**: If `_vuls.md` has zero findings, write the file unchanged and report `FINDINGS REVIEWED: 0`.

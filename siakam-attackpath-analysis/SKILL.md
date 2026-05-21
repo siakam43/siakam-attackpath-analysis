@@ -223,12 +223,7 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
    - If verification passes, mark the task `[x]` in tasks.md.
    - If verification fails (some findings left unreviewed, malformed updates), mark `PARTIAL` and note which findings need re-review.
 
-5. **Resolve DISPUTED findings.**
-   - For any finding where the reviewer returned DISPUTED, you (the main agent) make the final call.
-   - Read the finding, the original analysis, and the reviewer's dispute reason. Decide CONFIRMED or FALSE_POSITIVE.
-   - Update the finding's Review block accordingly.
-
-6. **Retry failures.**
+5. **Retry failures.**
    - For any reviewer that failed (timeout, malformed output, error), classify and retry once with a different sub-agent.
    - Timeout failures: retry with `PHASE3_TIMEOUT_MS * 1.5` ms extended timeout.
    - Other failures: retry with the same `PHASE3_TIMEOUT_MS` ms.
