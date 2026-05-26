@@ -22,10 +22,11 @@ Analyze C codebases for attack paths and security vulnerabilities.
 |-----------|---------|-------------|
 | `MAX_CALL_DEPTH` | 10 | Maximum nodes in an attack path (entry to leaf) |
 | `MAX_INFECTED_FUNCTIONS` | 50 | Maximum infected functions per entry before truncation |
-| `PHASE1_TIMEOUT_MS` | 600000 | Max time (ms) for one Phase 1 sub-agent (call graph + data flow) |
-| `PHASE2_TIMEOUT_BASE_MS` | 300000 | Base time (ms) for Phase 2 sub-agent setup, file I/O, and report writing |
-| `PHASE2_TIMEOUT_PER_FUNC_MS` | 60000 | Additional time (ms) per infected function in the entry |
-| `PHASE3_TIMEOUT_MS` | 600000 | Max time (ms) for one Phase 3 reviewer (all findings for one entry) |
+| `PHASE1_TIMEOUT_MS` | 1200000 | Max time (ms) for one Phase 1 sub-agent (call graph + data flow) |
+| `PHASE2_TIMEOUT_BASE_MS` | 600000 | Base time (ms) for Phase 2 sub-agent setup, file I/O, and report writing |
+| `PHASE2_TIMEOUT_PER_FUNC_MS` | 120000 | Additional time (ms) per infected function in the entry |
+| `PHASE3_TIMEOUT_MS` | 1200000 | Max time (ms) for one Phase 3 reviewer (all findings for one entry) |
+| `MAX_CONCURRENT_SUBAGENTS` | 2 | Maximum sub-agents running concurrently in any phase |
 
 A Phase 2 sub-agent's timeout = `PHASE2_TIMEOUT_BASE_MS + (num_infected_functions * PHASE2_TIMEOUT_PER_FUNC_MS)`.
 To change a parameter, edit the value in this file. `MAX_CALL_DEPTH` and `MAX_INFECTED_FUNCTIONS` must also be updated in `steps/step1_attack_path.md`.
@@ -130,28 +131,35 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 1. **Read the step document.**
    - Read `steps/step1_attack_path.md` in full. Follow its instructions exactly.
 
-2. **Launch parallel sub-agents (timeout: PHASE1_TIMEOUT_MS ms each).**
+2. **Launch sub-agents in batches and track (timeout: PHASE1_TIMEOUT_MS ms each, max concurrent: MAX_CONCURRENT_SUBAGENTS).**
    - Determine `CG_HELPER_PATH`: the absolute path to `tools/cg_helper.py`. This file is located at `<skill_root>/tools/cg_helper.py` where `<skill_root>` is the directory containing this SKILL.md file.
-   - For each entry in the task tracker that is NOT marked `[x]`:
-     - Dispatch a sub-agent with the prompt from `step1_attack_path.md`. Set its timeout to `PHASE1_TIMEOUT_MS` ms.
+   - Collect all entries in the task tracker that are NOT marked `[x]` into a pending list.
+   - While the pending list is not empty:
+     - Take the first `MAX_CONCURRENT_SUBAGENTS` entries as the current batch.
+     - For each entry in the batch, dispatch a sub-agent with the prompt from `step1_attack_path.md`. Set its timeout to `PHASE1_TIMEOUT_MS` ms.
      - The sub-agent receives: `ENTRY_NAME`, `ENTRY_FILE`, `ENTRY_LINE`, `PROJECT_DIR`, `MAX_CALL_DEPTH`, `MAX_INFECTED_FUNCTIONS`, `EXCLUSIONS`, and `CG_HELPER_PATH`.
      - The sub-agent writes its output to `<PROJECT_DIR>/.siakam_out/SAA/attack_path/<uid>_attack_path.md`.
-   - Launched sub-agents run concurrently.
+     - Wait for all sub-agents in the current batch to complete (success or failure).
+     - As sub-agents complete, classify the result and update tasks.md:
+       - Success: mark `[x]` and update `Last Updated`.
+       - **Timeout**: Mark `FAILED (timeout)`. The sub-agent exceeded `PHASE1_TIMEOUT_MS` ms.
+       - **Malformed output**: Mark `FAILED (malformed)`. The output file is missing, empty, or does not match the required format.
+       - **Error**: Mark `FAILED (error)` with the error message.
+     - Remove the batch entries from the pending list.
 
-3. **Monitor and track.**
-   - As each sub-agent completes successfully, mark its task `[x]` in tasks.md and update `Last Updated`.
-   - If a sub-agent fails, classify the failure:
-     - **Timeout**: Mark `FAILED (timeout)` in tasks.md. The sub-agent exceeded `PHASE1_TIMEOUT_MS` ms.
-     - **Malformed output**: Mark `FAILED (malformed)` in tasks.md. The output file is missing, empty, or does not match the required format.
-     - **Error**: Mark `FAILED (error)` with the error message.
+3. **Retry failures (in batches, respecting MAX_CONCURRENT_SUBAGENTS).**
+   - After all batches complete, collect all FAILED entries into a retry list.
+   - While the retry list is not empty:
+     - Take the first `MAX_CONCURRENT_SUBAGENTS` entries as the current retry batch.
+     - For each entry in the batch, dispatch a fresh sub-agent:
+       - Timeout failures: retry once with `PHASE1_TIMEOUT_MS * 1.5` ms (extended timeout).
+       - Malformed/error failures: retry once with the same timeout.
+     - Wait for all retry sub-agents in the current batch to complete.
+     - As retry sub-agents complete, apply the same classification as above.
+     - If a retry succeeds, mark it `[x]`. If it fails again, mark it `FAILED (retry exhausted)` and record the entry with its failure reason in a failures manifest string for the final report.
+     - Remove the batch entries from the retry list.
 
-4. **Retry failures.**
-   - After all sub-agents complete, collect all FAILED entries.
-   - For timeout failures: retry once with `PHASE1_TIMEOUT_MS * 1.5` ms (extended timeout) and a fresh sub-agent. The first run may have timed out due to an unusually large call graph.
-   - For malformed/error failures: retry once with the same timeout and a fresh sub-agent.
-   - If the retry succeeds, mark it `[x]`. If it fails again, mark it `FAILED (retry exhausted)` and record the entry with its failure reason in a failures manifest string for the final report.
-
-5. **Gate check.**
+4. **Gate check.**
    - If ALL entries failed, skip to Phase 4 (Consolidation) — generate a report with only failed entries.
    - Otherwise, proceed to Phase 2.
 
@@ -174,21 +182,27 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
      - List unanalyzed functions under a `## Unanalyzed Functions` section so the main agent can reassign them.
    - Full output (all functions analyzed) uses `<!-- STATUS: complete -->`.
 
-4. **Launch parallel sub-agents (dynamic timeout per entry).**
-   - For each entry, dispatch a sub-agent with the prompt from `step2_vuln_analysis.md`. Set its timeout to the computed value from step 2.
-   - The sub-agent receives: the entry name, the full `<uid>_attack_path.md` file, `PROJECT_DIR`, and the exclusion list.
-   - The sub-agent writes its output to `<PROJECT_DIR>/.siakam_out/SAA/vulns/<uid>_vuls.md`.
+4. **Launch sub-agents in batches and track (dynamic timeout per entry, max concurrent: MAX_CONCURRENT_SUBAGENTS).**
+   - Collect all entries into a pending list.
+   - While the pending list is not empty:
+     - Take the first `MAX_CONCURRENT_SUBAGENTS` entries as the current batch.
+     - For each entry in the batch, dispatch a sub-agent with the prompt from `step2_vuln_analysis.md`. Set its timeout to the computed value from step 2.
+     - The sub-agent receives: the entry name, the full `<uid>_attack_path.md` file, `PROJECT_DIR`, and the exclusion list.
+     - The sub-agent writes its output to `<PROJECT_DIR>/.siakam_out/SAA/vulns/<uid>_vuls.md`.
+     - Wait for all sub-agents in the current batch to complete.
+     - As sub-agents complete, classify the result and update tasks.md:
+       - Check the output file's status marker (`<!-- STATUS: complete -->` or `<!-- STATUS: partial -->`).
+       - **Format validation** (before marking success): verify that the `_vuls.md` file contains:
+         - `<!-- SECTION: finding -->` markers wrapping each finding
+         - `## Finding-001:` format (NOT `VULN-N` or other schemes)
+         - `### Review (Step 3)` tables with `*to be filled in Step 3*` in ALL value fields
+       - If any format check fails, mark `FAILED (malformed)` — do NOT accept it.
+       - Mark `[x]` on success (complete + format-valid), `PARTIAL` on partial output, `FAILED` with classification (`timeout`, `malformed`, `format-violation`, `error`) on failure.
+     - Remove the batch entries from the pending list.
 
-5. **Monitor, track, and retry.**
-   - For each completing sub-agent, check the output file's status marker (`<!-- STATUS: complete -->` or `<!-- STATUS: partial -->`).
-   - **Format validation** (before marking success): verify that the `_vuls.md` file contains:
-     - `<!-- SECTION: finding -->` markers wrapping each finding
-     - `## Finding-001:` format (NOT `VULN-N` or other schemes)
-     - `### Review (Step 3)` tables with `*to be filled in Step 3*` in ALL value fields
-   - If any format check fails, mark the output `FAILED (malformed)` — do NOT accept it.
-   - Mark `[x]` on success (complete + format-valid), `PARTIAL` on partial output, `FAILED` with classification (`timeout`, `malformed`, `format-violation`, `error`) on failure.
-   - For partial outputs: collect the unanalyzed functions from `## Unanalyzed Functions` and launch a new sub-agent with the computed timeout to cover them (smaller assignment, should complete faster). Append the new findings to the same `<uid>_vuls.md` file and renumber sequentially.
-   - For total failures: classify and retry once. Timeout failures get `PHASE2_TIMEOUT_BASE_MS + (num_infected_functions * PHASE2_TIMEOUT_PER_FUNC_MS * 1.5)` ms extended timeout. If the retry also fails, mark `FAILED (retry exhausted)`.
+5. **Handle partial outputs and retry failures.**
+   - **Partial outputs**: For entries marked `PARTIAL`, collect the unanalyzed functions from `## Unanalyzed Functions`. Launch a new sub-agent with the computed timeout to cover them (smaller assignment, should complete faster). If multiple partial entries need reassignment, batch them respecting `MAX_CONCURRENT_SUBAGENTS`. Append the new findings to the same `<uid>_vuls.md` file and renumber sequentially.
+   - **Total failures**: Collect all FAILED entries into a retry list. While the retry list is not empty, take the first `MAX_CONCURRENT_SUBAGENTS` entries as the current retry batch, dispatch fresh sub-agents, and wait for all to complete. Timeout failures get `PHASE2_TIMEOUT_BASE_MS + (num_infected_functions * PHASE2_TIMEOUT_PER_FUNC_MS * 1.5)` ms extended timeout. If the retry also fails, mark `FAILED (retry exhausted)`. Remove the batch entries from the retry list.
    - Record exhausted failures in a failures manifest string for the final report.
 
 6. **Gate check.**
@@ -202,32 +216,40 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 
 2. **Assign one reviewer per entry.**
    - For each entry with Phase 2 findings (successful or partial), assign one reviewer sub-agent.
-   - Dispatch a fresh sub-agent for each entry.
-   - Each reviewer receives ALL findings from one `<uid>_vuls.md` file, plus the full attack path context for each finding.
+   - Each reviewer will receive ALL findings from one `<uid>_vuls.md` file, plus the full attack path context for each finding.
    - Update tasks.md Phase 3 section with one task per entry.
 
-3. **Launch parallel sub-agents (timeout: PHASE3_TIMEOUT_MS ms each).**
-   - For each entry, dispatch a reviewer sub-agent with the prompt from `step3_false_positive.md`. Set its timeout to `PHASE3_TIMEOUT_MS` ms.
-   - The reviewer receives:
-     - The full `<uid>_vuls.md` file (all findings for that entry).
-     - The full `<uid>_attack_path.md` file (all attack paths, the Function Index, and per-function labels from Phase 1).
-     - `PROJECT_DIR` and `EXCLUSIONS` for locating source files.
-   - The reviewer reads source code themselves using Read tools to independently verify the attack path chain, data flow, and protective mechanisms for each finding.
-   - The reviewer writes the updated `<uid>_vuls.md` directly: filling in each finding's `### Review (Step 3)` table and updating the `## Summary` table.
-   - The reviewer returns a brief completion report listing the verdict for each finding.
+3. **Launch reviewer sub-agents in batches and track (timeout: PHASE3_TIMEOUT_MS ms each, max concurrent: MAX_CONCURRENT_SUBAGENTS).**
+   - Collect all entries into a pending list.
+   - While the pending list is not empty:
+     - Take the first `MAX_CONCURRENT_SUBAGENTS` entries as the current batch.
+     - For each entry in the batch, dispatch a reviewer sub-agent with the prompt from `step3_false_positive.md`. Set its timeout to `PHASE3_TIMEOUT_MS` ms.
+     - The reviewer receives:
+       - The full `<uid>_vuls.md` file (all findings for that entry).
+       - The full `<uid>_attack_path.md` file (all attack paths, the Function Index, and per-function labels from Phase 1).
+       - `PROJECT_DIR` and `EXCLUSIONS` for locating source files.
+     - The reviewer reads source code themselves using Read tools to independently verify the attack path chain, data flow, and protective mechanisms for each finding.
+     - The reviewer writes the updated `<uid>_vuls.md` directly: filling in each finding's `### Review (Step 3)` table and updating the `## Summary` table.
+     - The reviewer returns a brief completion report listing the verdict for each finding.
+     - Wait for all reviewers in the current batch to complete.
+     - As reviewers complete, verify their output and update tasks.md:
+       - Read the updated `<uid>_vuls.md` and verify:
+         - Every finding's `Reviewed` field is now `yes` (not `*to be filled in Step 3*`).
+         - No duplicate or missing review blocks.
+       - If verification passes, mark the task `[x]` in tasks.md.
+       - If verification fails (some findings left unreviewed, malformed updates), mark `PARTIAL` and note which findings need re-review.
+     - Remove the batch entries from the pending list.
 
-4. **Verify and track.**
-   - For each completing reviewer, read the updated `<uid>_vuls.md` and verify:
-     - Every finding's `Reviewed` field is now `yes` (not `*to be filled in Step 3*`).
-     - No duplicate or missing review blocks.
-   - If verification passes, mark the task `[x]` in tasks.md.
-   - If verification fails (some findings left unreviewed, malformed updates), mark `PARTIAL` and note which findings need re-review.
-
-5. **Retry failures.**
-   - For any reviewer that failed (timeout, malformed output, error), classify and retry once with a different sub-agent.
-   - Timeout failures: retry with `PHASE3_TIMEOUT_MS * 1.5` ms extended timeout.
-   - Other failures: retry with the same `PHASE3_TIMEOUT_MS` ms.
-   - If the retry also fails, leave all findings in that entry as unreviewed (`Reviewed` → no) and record it in the failures manifest.
+4. **Retry failures (in batches, respecting MAX_CONCURRENT_SUBAGENTS).**
+   - For any reviewer that failed (timeout, malformed output, error), classify and collect into a retry list.
+   - While the retry list is not empty:
+     - Take the first `MAX_CONCURRENT_SUBAGENTS` entries as the current retry batch.
+     - For each entry in the batch, dispatch a fresh sub-agent:
+       - Timeout failures: retry with `PHASE3_TIMEOUT_MS * 1.5` ms extended timeout.
+       - Other failures: retry with the same `PHASE3_TIMEOUT_MS` ms.
+     - Wait for all retry sub-agents in the current batch to complete.
+     - If the retry also fails, leave all findings in that entry as unreviewed (`Reviewed` → no) and record it in the failures manifest.
+     - Remove the batch entries from the retry list.
 
 ### Phase 4: Consolidation
 
