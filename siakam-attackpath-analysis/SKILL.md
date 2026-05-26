@@ -133,7 +133,7 @@ You are the orchestrator. Follow these steps in order. Do not skip, reorder, or 
 
 2. **Launch sub-agents in batches and track (timeout: PHASE1_TIMEOUT_MS ms each, max concurrent: MAX_CONCURRENT_SUBAGENTS).**
    - Determine `CG_HELPER_PATH`: the absolute path to `tools/cg_helper.py`. This file is located at `<skill_root>/tools/cg_helper.py` where `<skill_root>` is the directory containing this SKILL.md file.
-   - Collect all entries in the task tracker that are NOT marked `[x]` into a pending list.
+   - Collect all entries in the task tracker marked `[ ]` into a pending list.
    - While the pending list is not empty:
      - Take the first `MAX_CONCURRENT_SUBAGENTS` entries as the current batch.
      - For each entry in the batch, dispatch a sub-agent with the prompt from `step1_attack_path.md`. Set its timeout to `PHASE1_TIMEOUT_MS` ms.
